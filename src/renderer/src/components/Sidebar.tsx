@@ -1,24 +1,51 @@
 import { useMemo, useState } from 'react'
 import type { ThreadSummary } from '../../../shared/types'
+import { api } from '../api'
 import { useAppStore } from '../stores/app-store'
 
 export function Sidebar(): JSX.Element {
-  const { threads, activeThreadId, selectedProject, goHome, openThread } = useAppStore()
+  const {
+    threads,
+    activeThreadId,
+    selectedProject,
+    projects,
+    goHome,
+    openThread,
+    addProject,
+    removeProject,
+    deleteThread
+  } = useAppStore()
+  const [deleting, setDeleting] = useState<ThreadSummary | null>(null)
 
-  const projects = useMemo(() => {
-    const map = new Map<string, ThreadSummary[]>()
+  /** 项目列表 = 用户打开的工作区（settings.projects）+ 会话所在目录的隐式分组 */
+  const merged = useMemo(() => {
+    const groups = new Map<string, ThreadSummary[]>()
     for (const t of threads) {
-      const list = map.get(t.project) ?? []
+      const list = groups.get(t.project) ?? []
       list.push(t)
-      map.set(t.project, list)
+      groups.set(t.project, list)
     }
-    return [...map.entries()]
-  }, [threads])
+    const out: { name: string; threads: ThreadSummary[]; pinned: boolean }[] = []
+    for (const p of projects) {
+      out.push({ name: p.name, threads: groups.get(p.name) ?? [], pinned: true })
+    }
+    for (const [name, list] of groups) {
+      if (!projects.some((p) => p.name === name)) {
+        out.push({ name, threads: list, pinned: false })
+      }
+    }
+    return out
+  }, [threads, projects])
 
   const recent = useMemo(
     () => [...threads].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5),
     [threads]
   )
+
+  const handleAddProject = async (): Promise<void> => {
+    const dir = await api.pickDirectory()
+    if (dir) await addProject(dir)
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -27,22 +54,34 @@ export function Sidebar(): JSX.Element {
         <NavRow icon="💬" label="聊天" active={activeThreadId === null} onClick={() => goHome()} />
       </nav>
 
-      <SectionHeader label="项目" />
+      <div className="flex items-center justify-between px-4 pb-1 pt-3">
+        <span className="text-[11px] font-medium text-neutral-400">项目</span>
+        <button
+          onClick={() => void handleAddProject()}
+          className="rounded px-1 text-neutral-400 hover:bg-surface-2 hover:text-neutral-600"
+          title="打开项目文件夹"
+        >
+          ＋
+        </button>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {projects.map(([name, list]) => (
+        {merged.map((g) => (
           <ProjectGroup
-            key={name}
-            name={name}
-            threads={list}
-            selected={name === selectedProject}
+            key={g.name}
+            name={g.name}
+            threads={g.threads}
+            pinned={g.pinned}
+            selected={g.name === selectedProject}
             activeThreadId={activeThreadId}
-            onSelect={() => goHome(name)}
+            onSelect={() => goHome(g.name)}
             onOpenThread={openThread}
+            onRemove={g.pinned ? () => void removeProject(g.name) : undefined}
+            onDeleteThread={setDeleting}
           />
         ))}
-        {projects.length === 0 && (
+        {merged.length === 0 && (
           <p className="px-2 py-4 text-center text-xs text-neutral-400">
-            还没有任务，点击「新建任务」开始
+            点击上方 ＋ 打开项目文件夹开始
           </p>
         )}
       </div>
@@ -55,11 +94,40 @@ export function Sidebar(): JSX.Element {
             thread={t}
             active={t.id === activeThreadId}
             onClick={() => openThread(t.id)}
+            onDelete={() => setDeleting(t)}
           />
         ))}
       </div>
 
       <AccountMenu />
+
+      {deleting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-[380px] rounded-xl border border-surface-border bg-surface-0 p-5 shadow-2xl">
+            <div className="text-sm font-semibold text-neutral-800">删除会话</div>
+            <p className="mt-2 text-[13px] leading-relaxed text-neutral-500">
+              将永久删除「{deleting.title}」，此操作不可撤销。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDeleting(null)}
+                className="rounded-lg bg-surface-2 px-3.5 py-1.5 text-[13px] text-neutral-700 hover:bg-surface-3"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  deleteThread(deleting.id)
+                  setDeleting(null)
+                }}
+                className="rounded-lg bg-red-600 px-3.5 py-1.5 text-[13px] text-white hover:bg-red-500"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -164,29 +232,50 @@ function SectionHeader({ label }: { label: string }): JSX.Element {
 function ProjectGroup({
   name,
   threads,
+  pinned,
   selected,
   activeThreadId,
   onSelect,
-  onOpenThread
+  onOpenThread,
+  onRemove,
+  onDeleteThread
 }: {
   name: string
   threads: ThreadSummary[]
+  pinned: boolean
   selected: boolean
   activeThreadId: string | null
   onSelect: () => void
   onOpenThread: (id: string) => void
+  onRemove?: () => void
+  onDeleteThread: (t: ThreadSummary) => void
 }): JSX.Element {
   return (
-    <div className="mb-1">
-      <button
-        onClick={onSelect}
-        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium ${
-          selected ? 'bg-surface-3 text-neutral-900' : 'text-neutral-800 hover:bg-surface-2'
+    <div className="group/proj mb-1">
+      <div
+        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 ${
+          selected ? 'bg-surface-3' : 'hover:bg-surface-2'
         }`}
       >
-        <span className="text-xs">📁</span>
-        <span className="truncate">{name}</span>
-      </button>
+        <button
+          onClick={onSelect}
+          className={`flex min-w-0 flex-1 items-center gap-2 text-left text-[13px] font-medium ${
+            selected ? 'text-neutral-900' : 'text-neutral-800'
+          }`}
+        >
+          <span className="text-xs">📁</span>
+          <span className="truncate">{name}</span>
+        </button>
+        {onRemove && (
+          <button
+            onClick={onRemove}
+            className="hidden shrink-0 rounded px-1 text-neutral-400 hover:text-red-500 group-hover/proj:block"
+            title="从列表移除该项目（不删除会话）"
+          >
+            ✕
+          </button>
+        )}
+      </div>
       <div className="ml-4 mt-0.5 space-y-0.5">
         {threads.map((t) => (
           <ThreadRow
@@ -194,6 +283,7 @@ function ProjectGroup({
             thread={t}
             active={t.id === activeThreadId}
             onClick={() => onOpenThread(t.id)}
+            onDelete={() => onDeleteThread(t)}
           />
         ))}
       </div>
@@ -201,15 +291,17 @@ function ProjectGroup({
   )
 }
 
-/** 会话行：hover 显示 ⋯ 菜单（重命名 / 删除，均为真实 grok 扩展方法） */
+/** 会话行：hover 显示 ⋯ 菜单（重命名 / 删除） */
 function ThreadRow({
   thread,
   active,
-  onClick
+  onClick,
+  onDelete
 }: {
   thread: ThreadSummary
   active: boolean
   onClick: () => void
+  onDelete: () => void
 }): JSX.Element {
   return (
     <div
@@ -221,20 +313,26 @@ function ThreadRow({
         <StatusDot status={thread.status} />
         <span className="truncate text-[13px] text-neutral-600">{thread.title}</span>
       </button>
-      <ThreadActions thread={thread} />
+      <ThreadActions thread={thread} onDelete={onDelete} />
     </div>
   )
 }
 
-function ThreadActions({ thread }: { thread: ThreadSummary }): JSX.Element {
+function ThreadActions({
+  thread,
+  onDelete
+}: {
+  thread: ThreadSummary
+  onDelete: () => void
+}): JSX.Element {
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState<'menu' | 'rename' | 'delete'>('menu')
+  const [renaming, setRenaming] = useState(false)
   const [title, setTitle] = useState(thread.title)
-  const { renameThread, deleteThread } = useAppStore()
+  const { renameThread } = useAppStore()
 
   const close = (): void => {
     setOpen(false)
-    setMode('menu')
+    setRenaming(false)
     setTitle(thread.title)
   }
 
@@ -256,23 +354,25 @@ function ThreadActions({ thread }: { thread: ThreadSummary }): JSX.Element {
         <>
           <span className="fixed inset-0 z-40" onClick={close} />
           <span className="absolute right-0 top-full z-50 mt-0.5 w-40 rounded-lg border border-surface-border bg-surface-0 py-1 shadow-lg">
-            {mode === 'menu' && (
+            {!renaming ? (
               <>
                 <button
-                  onClick={() => setMode('rename')}
+                  onClick={() => setRenaming(true)}
                   className="w-full px-3 py-1.5 text-left text-[13px] text-neutral-700 hover:bg-surface-1"
                 >
                   重命名
                 </button>
                 <button
-                  onClick={() => setMode('delete')}
+                  onClick={() => {
+                    onDelete()
+                    close()
+                  }}
                   className="w-full px-3 py-1.5 text-left text-[13px] text-red-600 hover:bg-surface-1"
                 >
                   删除
                 </button>
               </>
-            )}
-            {mode === 'rename' && (
+            ) : (
               <span className="flex items-center gap-1 px-2 py-1.5">
                 <input
                   autoFocus
@@ -297,28 +397,6 @@ function ThreadActions({ thread }: { thread: ThreadSummary }): JSX.Element {
                 >
                   ✓
                 </button>
-              </span>
-            )}
-            {mode === 'delete' && (
-              <span className="px-3 py-1.5">
-                <span className="block text-[12px] text-neutral-500">确认删除该会话？</span>
-                <span className="mt-1.5 flex gap-2">
-                  <button
-                    onClick={() => {
-                      deleteThread(thread.id)
-                      close()
-                    }}
-                    className="rounded bg-red-600 px-2 py-1 text-[12px] text-white hover:bg-red-500"
-                  >
-                    删除
-                  </button>
-                  <button
-                    onClick={close}
-                    className="rounded bg-surface-2 px-2 py-1 text-[12px] text-neutral-600"
-                  >
-                    取消
-                  </button>
-                </span>
               </span>
             )}
           </span>

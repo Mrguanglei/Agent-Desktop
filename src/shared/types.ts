@@ -193,12 +193,14 @@ export interface AppSettings {
   modelId: string | null
   /** 新会话偏好 reasoning effort（null = grok 当前值） */
   effortId: string | null
+  /** 用户打开的项目工作区（对标 Codex 侧栏项目列表） */
+  projects: { name: string; path: string }[]
 }
 
 /** preload 暴露到 window.grok 的 API */
 export interface GrokApi {
   getBootstrap(): Promise<BootstrapInfo>
-  newThread(project?: string): Promise<ThreadSummary>
+  newThread(project?: string, cwd?: string): Promise<ThreadSummary>
   /** 加载历史会话（session/load 回放）；幂等 */
   loadThread(threadId: string): Promise<void>
   /** 重命名会话（_x.ai/session/rename） */

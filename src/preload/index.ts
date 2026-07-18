@@ -15,8 +15,8 @@ import type {
 
 const api: GrokApi = {
   getBootstrap: (): Promise<BootstrapInfo> => ipcRenderer.invoke('bootstrap'),
-  newThread: (project?: string): Promise<ThreadSummary> =>
-    ipcRenderer.invoke('thread:new', project),
+  newThread: (project?: string, cwd?: string): Promise<ThreadSummary> =>
+    ipcRenderer.invoke('thread:new', project, cwd),
   loadThread: (threadId: string): Promise<void> => ipcRenderer.invoke('thread:load', threadId),
   renameThread: (threadId: string, title: string): Promise<void> =>
     ipcRenderer.invoke('thread:rename', threadId, title),

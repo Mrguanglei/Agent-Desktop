@@ -61,7 +61,8 @@ export class BackendManager implements BackendSink {
     defaultCwd: homedir(),
     approvalMode: 'ask',
     modelId: null,
-    effortId: null
+    effortId: null,
+    projects: []
   }
   private readonly pty: PtyManager
 
@@ -183,17 +184,18 @@ export class BackendManager implements BackendSink {
     return join(app.getPath('userData'), 'settings.json')
   }
 
-  async newThread(project?: string): Promise<ThreadSummary> {
+  async newThread(project?: string, cwd?: string): Promise<ThreadSummary> {
+    const workdir = cwd ?? this.defaultCwd
     const backend = this.createBackend()
-    const sessionId = await backend.startSession(randomUUID(), this.defaultCwd, {
+    const sessionId = await backend.startSession(randomUUID(), workdir, {
       modelId: this.currentModelId ?? undefined
     })
     // thread.id 统一使用 grok sessionId，与 sessions/list、sessions/changed 天然对齐
     const thread: ThreadSummary = {
       id: sessionId,
-      project: project ?? this.projectLabel(this.defaultCwd),
+      project: project ?? this.projectLabel(workdir),
       title: '新任务',
-      cwd: this.defaultCwd,
+      cwd: workdir,
       updatedAt: Date.now(),
       status: 'idle'
     }

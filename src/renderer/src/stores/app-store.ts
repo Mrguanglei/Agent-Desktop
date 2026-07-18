@@ -32,6 +32,8 @@ interface AppState {
   changesPanelOpen: boolean
   /** 输入框草稿（主页建议卡片会写入它） */
   draft: string
+  /** 用户打开的项目工作区（设置持久化） */
+  projects: { name: string; path: string }[]
   /** 真实模型列表（来自 grok session/new 响应 / models/update 通知） */
   availableModels: ModelInfo[]
   currentModelId: string | null
@@ -60,6 +62,10 @@ interface AppState {
   logout: () => void
   renameThread: (id: string, title: string) => void
   deleteThread: (id: string) => void
+  addProject: (path: string) => Promise<void>
+  removeProject: (name: string) => Promise<void>
+  /** 当前选中项目的工作目录（用于新会话 cwd 与 @ 搜索根） */
+  selectedProjectPath: () => string
   handleEvent: (ev: BackendEvent) => void
 }
 
@@ -82,6 +88,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: null,
   settingsOpen: false,
   grokVersion: null,
+  projects: [],
 
   bootstrap: async () => {
     const info = await api.getBootstrap()
@@ -97,7 +104,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       account: info.account,
       settings: info.settings,
       grokVersion: info.grokVersion,
-      approvalMode: info.settings.approvalMode
+      approvalMode: info.settings.approvalMode,
+      projects: info.settings.projects
     })
   },
 
@@ -164,6 +172,38 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteThread: (id) => {
     void api.deleteThread(id)
+  },
+
+  addProject: async (path) => {
+    const name = cwdBase(path)
+    const s = get()
+    if (s.projects.some((p) => p.path === path)) {
+      set({ selectedProject: name, activeThreadId: null })
+      return
+    }
+    const projects = [...s.projects, { name, path }]
+    const settings = await api.updateSettings({ projects })
+    set({ settings, projects: settings.projects, selectedProject: name, activeThreadId: null })
+  },
+
+  removeProject: async (name) => {
+    const projects = get().projects.filter((p) => p.name !== name)
+    const settings = await api.updateSettings({ projects })
+    set((s) => ({
+      settings,
+      projects: settings.projects,
+      selectedProject: s.selectedProject === name ? null : s.selectedProject
+    }))
+  },
+
+  selectedProjectPath: () => {
+    const s = get()
+    if (!s.selectedProject) return s.defaultCwd
+    return (
+      s.projects.find((p) => p.name === s.selectedProject)?.path ??
+      s.threads.find((t) => t.project === s.selectedProject)?.cwd ??
+      s.defaultCwd
+    )
   },
 
   handleEvent: (ev) => {

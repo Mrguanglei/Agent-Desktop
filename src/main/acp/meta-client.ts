@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { homedir } from 'node:os'
 import type { AccountInfo, FileMatch, ModelInfo, ThreadSummary } from '../../shared/types'
 import { JsonRpcConnection } from './connection'
 import { extRequest, parseAccount, parseModels } from './ext'
@@ -21,13 +22,11 @@ export class MetaAcpClient {
   private searchSessions = new Map<string, string>()
   private fuzzyWaiters = new Map<string, (matches: FileMatch[]) => void>()
 
-  private constructor(
-    private readonly bin: string,
-    private readonly cwd: string
-  ) {}
+  private constructor(private readonly bin: string) {}
 
   static async start(bin: string, cwd: string): Promise<MetaAcpClient | null> {
-    const client = new MetaAcpClient(bin, cwd)
+    const client = new MetaAcpClient(bin)
+    void cwd // 无 session 后 cwd 仅用于向后兼容签名
     try {
       await client.handshake()
       return client
@@ -40,7 +39,7 @@ export class MetaAcpClient {
 
   private async handshake(): Promise<void> {
     this.proc = spawn(this.bin, ['agent', '--no-leader', 'stdio'], {
-      cwd: this.cwd,
+      cwd: homedir(),
       env: process.env,
       stdio: ['pipe', 'pipe', 'pipe']
     })
@@ -68,7 +67,7 @@ export class MetaAcpClient {
       clientInfo: { name: 'grok-desktop-meta', version: '0.1.0' },
       clientCapabilities: {},
       _meta: { clientType: 'desktop' }
-    })) as { _meta?: { defaultAuthMethodId?: string; agentVersion?: string } }
+    })) as { _meta?: { defaultAuthMethodId?: string; agentVersion?: string; modelState?: unknown } }
 
     this.agentVersion = init?._meta?.agentVersion ?? null
 
@@ -76,11 +75,12 @@ export class MetaAcpClient {
       methodId: init?._meta?.defaultAuthMethodId ?? 'cached_token'
     })
 
-    const created = (await this.conn.request('session/new', {
-      cwd: this.cwd,
-      mcpServers: []
-    })) as { models?: unknown }
-    this.models = parseModels(created?.models)
+    // 已验证（acp-nosession-probe）：auth/info、billing、sessions/list、fuzzy 均无需 session。
+    // 不再 session/new —— 避免每次启动 app 都产生一个空会话污染列表。
+    // 模型列表尝试从 initialize _meta.modelState 解析（拿不到就等首个线程的 backend 推送）。
+    if (init?._meta?.modelState) {
+      this.models = parseModels(init._meta.modelState)
+    }
 
     const [info, billing] = await Promise.all([
       extRequest(this.conn, 'auth/info').catch((err) => {

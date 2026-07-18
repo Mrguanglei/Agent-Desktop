@@ -10,8 +10,15 @@ const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = [
 
 /** 主页（新任务）空态：Logo + 动态标题 + 建议卡片 + 大输入框 */
 export function HomeView(): JSX.Element {
-  const { selectedProject, defaultCwd, setDraft } = useAppStore()
-  const projectLabel = selectedProject ?? (defaultCwd ? cwdBase(defaultCwd) : null)
+  const { selectedProject, setDraft } = useAppStore()
+  const cwd = useAppStore((s) =>
+    s.selectedProject
+      ? (s.projects.find((p) => p.name === s.selectedProject)?.path ??
+        s.threads.find((t) => t.project === s.selectedProject)?.cwd ??
+        s.defaultCwd)
+      : s.defaultCwd
+  )
+  const projectLabel = selectedProject ?? (cwd ? cwdBase(cwd) : null)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-1 flex-col items-center justify-center gap-10 px-6">
@@ -36,7 +43,7 @@ export function HomeView(): JSX.Element {
           ))}
         </div>
       </div>
-      <Composer threadId={null} project={projectLabel} cwd={defaultCwd || null} />
+      <Composer threadId={null} project={projectLabel} cwd={cwd || null} />
     </div>
   )
 }

@@ -68,8 +68,9 @@ export function Composer({
         useChatStore.getState().addUserMessage(threadId, text)
         void api.sendPrompt(threadId, text, attach)
       } else {
-        // 主页：先建线程再发首条消息
-        const thread = await api.newThread(project ?? undefined)
+        // 主页：先建线程再发首条消息（cwd 跟随当前选中项目）
+        const workdir = useAppStore.getState().selectedProjectPath()
+        const thread = await api.newThread(project ?? undefined, workdir)
         useAppStore.getState().adoptThread(thread)
         useChatStore.getState().addUserMessage(thread.id, text)
         void api.sendPrompt(thread.id, text, attach)

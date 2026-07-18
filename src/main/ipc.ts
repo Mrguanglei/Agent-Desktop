@@ -12,8 +12,8 @@ import type { BackendManager } from './backend'
 
 export function registerIpc(manager: BackendManager): void {
   ipcMain.handle('bootstrap', (): BootstrapInfo => manager.bootstrap())
-  ipcMain.handle('thread:new', (_e, project?: string): Promise<ThreadSummary> =>
-    manager.newThread(project)
+  ipcMain.handle('thread:new', (_e, project?: string, cwd?: string): Promise<ThreadSummary> =>
+    manager.newThread(project, cwd)
   )
   ipcMain.handle('thread:load', (_e, threadId: string): Promise<void> =>
     manager.loadThread(threadId)
