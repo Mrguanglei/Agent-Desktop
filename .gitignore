@@ -1,0 +1,7 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+.research/codex-app-server-ts/
+.research/codex-app-server-schema/
