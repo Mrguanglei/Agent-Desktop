@@ -195,6 +195,8 @@ export interface AppSettings {
   effortId: string | null
   /** 用户打开的项目工作区（对标 Codex 侧栏项目列表） */
   projects: { name: string; path: string }[]
+  /** 自定义后端地址（GROK_CLI_CHAT_PROXY_BASE_URL；null = xAI 官方） */
+  backendUrl: string | null
 }
 
 /** preload 暴露到 window.grok 的 API */
@@ -234,6 +236,8 @@ export interface GrokApi {
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   /** 系统目录选择器，返回选中路径或 null */
   pickDirectory(): Promise<string | null>
+  /** 测试后端地址连通性 */
+  testBackend(url: string): Promise<{ ok: boolean; detail: string }>
   /** 打开一个用户 shell 终端 */
   ptyCreate(cwd: string, cols: number, rows: number): Promise<PtyTabInfo>
   ptyWrite(id: string, data: string): Promise<void>

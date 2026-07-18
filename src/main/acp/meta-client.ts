@@ -21,11 +21,17 @@ export class MetaAcpClient {
   private conn: JsonRpcConnection | null = null
   private searchSessions = new Map<string, string>()
   private fuzzyWaiters = new Map<string, (matches: FileMatch[]) => void>()
+  private env: NodeJS.ProcessEnv = process.env
 
   private constructor(private readonly bin: string) {}
 
-  static async start(bin: string, cwd: string): Promise<MetaAcpClient | null> {
+  static async start(
+    bin: string,
+    cwd: string,
+    env?: NodeJS.ProcessEnv
+  ): Promise<MetaAcpClient | null> {
     const client = new MetaAcpClient(bin)
+    if (env) client.env = env
     void cwd // 无 session 后 cwd 仅用于向后兼容签名
     try {
       await client.handshake()
@@ -40,7 +46,7 @@ export class MetaAcpClient {
   private async handshake(): Promise<void> {
     this.proc = spawn(this.bin, ['agent', '--no-leader', 'stdio'], {
       cwd: homedir(),
-      env: process.env,
+      env: this.env,
       stdio: ['pipe', 'pipe', 'pipe']
     })
     this.conn = new JsonRpcConnection(this.proc)

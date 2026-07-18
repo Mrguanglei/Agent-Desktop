@@ -81,6 +81,10 @@ export function registerIpc(manager: BackendManager): void {
     'settings:write',
     (_e, patch: Partial<AppSettings>): AppSettings => manager.updateSettings(patch)
   )
+  ipcMain.handle(
+    'backend:test',
+    (_e, url: string): Promise<{ ok: boolean; detail: string }> => manager.testBackend(url)
+  )
   ipcMain.handle('dialog:pickDirectory', async (): Promise<string | null> => {
     const win = BrowserWindow.getAllWindows()[0]
     const opts = {

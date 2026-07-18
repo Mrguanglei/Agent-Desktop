@@ -62,7 +62,8 @@ export class BackendManager implements BackendSink {
     approvalMode: 'ask',
     modelId: null,
     effortId: null,
-    projects: []
+    projects: [],
+    backendUrl: null
   }
   private readonly pty: PtyManager
   /** 预热会话：home 输入框聚焦时后台建好的待用一个（未采用前不进列表，退出时清理） */
@@ -93,7 +94,7 @@ export class BackendManager implements BackendSink {
 
     if (this.mode === 'acp' && this.grokBin) {
       // 预热元数据会话：模型列表 + 账号信息（失败不阻塞，线程建立时再补）
-      this.meta = await MetaAcpClient.start(this.grokBin, this.defaultCwd)
+      this.meta = await MetaAcpClient.start(this.grokBin, this.defaultCwd, this.spawnEnv())
       if (this.meta) {
         this.availableModels = this.meta.models.availableModels
         this.currentModelId = this.settings.modelId ?? this.meta.models.currentModelId
@@ -154,6 +155,32 @@ export class BackendManager implements BackendSink {
     return this.settings
   }
 
+  /** grok 子进程环境：自定义后端时注入 GROK_CLI_CHAT_PROXY_BASE_URL */
+  private spawnEnv(): NodeJS.ProcessEnv {
+    const env = { ...process.env }
+    if (this.settings.backendUrl) {
+      env['GROK_CLI_CHAT_PROXY_BASE_URL'] = this.settings.backendUrl
+    }
+    return env
+  }
+
+  /** 测试后端连通性（/health → /v1/models 逐级尝试，任何 HTTP 响应即视为可达） */
+  async testBackend(url: string): Promise<{ ok: boolean; detail: string }> {
+    const base = url.replace(/\/$/, '')
+    for (const path of ['/health', '/v1/models']) {
+      try {
+        const resp = await fetch(`${base}${path}`, {
+          signal: AbortSignal.timeout(4000)
+        })
+        return { ok: resp.ok, detail: `${path} → HTTP ${resp.status}` }
+      } catch (err) {
+        // 继续尝试下一个路径
+        void err
+      }
+    }
+    return { ok: false, detail: '连接失败（地址不可达或服务未启动）' }
+  }
+
   /** 输入框聚焦时预热：后台建好会话备用，发送时零等待 */
   async prewarm(cwd: string): Promise<void> {
     if (this.prewarmed && this.prewarmed.cwd === cwd) return
@@ -169,7 +196,6 @@ export class BackendManager implements BackendSink {
     }
   }
 
-  /** 更新设置：持久化到 userData/settings.json 并立即生效 */
   /** 丢弃未采用的预热会话（grok 侧同步删除，不污染列表） */
   private async discardPrewarmed(): Promise<void> {
     if (!this.prewarmed) return
@@ -180,6 +206,8 @@ export class BackendManager implements BackendSink {
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
+    const backendChanged =
+      patch.backendUrl !== undefined && patch.backendUrl !== this.settings.backendUrl
     this.settings = { ...this.settings, ...patch }
     if (patch.approvalMode) this.approvalMode = patch.approvalMode
     if (patch.defaultCwd) this.defaultCwd = patch.defaultCwd
@@ -189,7 +217,34 @@ export class BackendManager implements BackendSink {
     } catch {
       /* 持久化失败不阻塞使用 */
     }
+    if (backendChanged) {
+      // 后端切换：预热会话作废 + meta 连接带新环境重连（已有线程会话保持原后端直至重建）
+      void this.discardPrewarmed()
+      void this.restartMeta()
+    }
     return this.settings
+  }
+
+  /** 后端地址变更后重连 meta（会话列表/账号/模型/搜索都走新后端） */
+  private async restartMeta(): Promise<void> {
+    if (this.mode !== 'acp' || !this.grokBin) return
+    this.meta?.dispose()
+    this.meta = await MetaAcpClient.start(this.grokBin, this.defaultCwd, this.spawnEnv())
+    if (this.meta) {
+      this.availableModels = this.meta.models.availableModels
+      this.currentModelId = this.settings.modelId ?? this.meta.models.currentModelId
+      this.account = this.meta.account
+      this.grokVersion = this.meta.agentVersion
+      this.emit({
+        type: 'models',
+        availableModels: this.availableModels,
+        currentModelId: this.currentModelId
+      })
+      this.emit({ type: 'account', account: this.account })
+      const sessions = await this.meta.listSessions()
+      for (const t of sessions) this.threads.set(t.id, t)
+      for (const t of sessions) this.emit({ type: 'thread_updated', thread: t })
+    }
   }
 
   private loadSettings(): void {
@@ -524,7 +579,7 @@ export class BackendManager implements BackendSink {
 
   private createBackend(): AgentBackend {
     return this.mode === 'acp'
-      ? new GrokAcpBackend(this, this.grokBin ?? 'grok', this.pty)
+      ? new GrokAcpBackend(this, this.grokBin ?? 'grok', this.pty, this.spawnEnv())
       : new MockBackend(this)
   }
 

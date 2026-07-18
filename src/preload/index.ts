@@ -45,6 +45,8 @@ const api: GrokApi = {
   updateSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke('settings:write', patch),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickDirectory'),
+  testBackend: (url: string): Promise<{ ok: boolean; detail: string }> =>
+    ipcRenderer.invoke('backend:test', url),
   ptyCreate: (cwd: string, cols: number, rows: number): Promise<PtyTabInfo> =>
     ipcRenderer.invoke('pty:create', cwd, cols, rows),
   ptyWrite: (id: string, data: string): Promise<void> => ipcRenderer.invoke('pty:write', id, data),

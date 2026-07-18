@@ -25,7 +25,8 @@ export class GrokAcpBackend implements AgentBackend {
   constructor(
     private readonly sink: BackendSink,
     private readonly bin: string,
-    private readonly pty: PtyManager | null
+    private readonly pty: PtyManager | null,
+    private readonly env: NodeJS.ProcessEnv
   ) {}
 
   async startSession(threadId: string, cwd: string, opts?: { modelId?: string }): Promise<string> {
@@ -91,7 +92,7 @@ export class GrokAcpBackend implements AgentBackend {
   private async connect(threadId: string, cwd: string): Promise<JsonRpcConnection> {
     const proc = spawn(this.bin, ['agent', '--no-leader', 'stdio'], {
       cwd,
-      env: process.env,
+      env: this.env,
       stdio: ['pipe', 'pipe', 'pipe']
     })
     const conn = new JsonRpcConnection(proc)

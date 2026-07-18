@@ -3,11 +3,12 @@ import type { ApprovalMode } from '../../../shared/types'
 import { api } from '../api'
 import { useAppStore } from '../stores/app-store'
 
-type Tab = 'general' | 'model' | 'account' | 'about'
+type Tab = 'general' | 'model' | 'backend' | 'account' | 'about'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: '通用' },
   { id: 'model', label: '模型' },
+  { id: 'backend', label: '后端' },
   { id: 'account', label: '账号' },
   { id: 'about', label: '关于' }
 ]
@@ -47,6 +48,7 @@ export function SettingsDialog(): JSX.Element | null {
           </button>
           {tab === 'general' && <GeneralTab />}
           {tab === 'model' && <ModelTab />}
+          {tab === 'backend' && <BackendTab />}
           {tab === 'account' && <AccountTab />}
           {tab === 'about' && <AboutTab />}
         </div>
@@ -189,6 +191,77 @@ function OptionRow({
       </span>
       {selected && <span className="text-accent">✓</span>}
     </button>
+  )
+}
+
+/** 后端配置：自定义 cli-chat-proxy 兼容网关地址（WorkBuddy 后端接入点） */
+function BackendTab(): JSX.Element {
+  const { settings, updateSettings } = useAppStore()
+  const [url, setUrl] = useState(settings?.backendUrl ?? '')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
+  const [testOk, setTestOk] = useState<boolean | null>(null)
+  if (!settings) return <></>
+
+  const save = (value: string): void => {
+    void updateSettings({ backendUrl: value.trim() || null })
+  }
+  const test = async (): Promise<void> => {
+    if (!url.trim()) return
+    setTesting(true)
+    setTestResult(null)
+    const r = await api.testBackend(url.trim())
+    setTestOk(r.ok)
+    setTestResult(r.detail)
+    setTesting(false)
+  }
+
+  return (
+    <div>
+      <SectionTitle>后端</SectionTitle>
+      <div className="mb-1 text-[13px] font-medium text-neutral-700">后端网关地址</div>
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="留空 = xAI 官方（cli-chat-proxy.grok.com）"
+          spellCheck={false}
+          className="min-w-0 flex-1 rounded-md border border-surface-border bg-surface-0 px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-neutral-400"
+        />
+        <button
+          onClick={() => save(url)}
+          className="shrink-0 rounded-md bg-neutral-900 px-3 py-1.5 text-[12px] text-white hover:bg-neutral-700"
+        >
+          保存
+        </button>
+        <button
+          onClick={() => void test()}
+          disabled={!url.trim() || testing}
+          className="shrink-0 rounded-md border border-surface-border px-3 py-1.5 text-[12px] text-neutral-700 hover:bg-surface-2 disabled:opacity-40"
+        >
+          {testing ? '测试中…' : '测试连接'}
+        </button>
+      </div>
+      {testResult && (
+        <p className={`mb-2 text-[11px] ${testOk ? 'text-emerald-600' : 'text-red-500'}`}>
+          {testOk ? '✓ ' : '✗ '}
+          {testResult}
+        </p>
+      )}
+      <div className="mb-4 rounded-md bg-surface-1 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
+        当前生效：
+        <code className="font-mono text-neutral-700">
+          {settings.backendUrl ?? 'https://cli-chat-proxy.grok.com/v1（xAI 官方）'}
+        </code>
+      </div>
+      <p className="text-[11px] leading-relaxed text-neutral-400">
+        指向任何 cli-chat-proxy 兼容网关（如本地运行的 workbuddy-backend：
+        <code className="font-mono">http://127.0.0.1:8399/v1</code>
+        ）。保存后新会话立即走新后端，账号/会话列表/搜索的元数据连接自动重连；
+        已有线程会话保持原后端直至重建。本地网关可用{' '}
+        <code className="font-mono">npm run dev:backend</code> 启动。
+      </p>
+    </div>
   )
 }
 
