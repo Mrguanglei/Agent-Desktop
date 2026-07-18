@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
+    "dev:backend": "npm --prefix backend run dev",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {

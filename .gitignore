@@ -1,6 +1,8 @@
 node_modules/
 out/
 dist/
+backend/node_modules/
+backend/dist/
 *.log
 .DS_Store
 .research/codex-app-server-ts/

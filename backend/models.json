@@ -1,0 +1,9 @@
+{
+  "models": [
+    {
+      "id": "grok-4.5",
+      "name": "Grok 4.5 · WorkBuddy 网关",
+      "description": "经 WorkBuddy 网关路由的 Grok 4.5（验证网关自有目录合并）"
+    }
+  ]
+}
