@@ -200,5 +200,6 @@ interface RawSession {
 }
 
 function cwdBase(cwd: string): string {
+  if (cwd === homedir()) return '主目录'
   return cwd.split('/').filter(Boolean).pop() ?? cwd
 }

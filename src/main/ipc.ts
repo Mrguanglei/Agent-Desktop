@@ -15,6 +15,7 @@ export function registerIpc(manager: BackendManager): void {
   ipcMain.handle('thread:new', (_e, project?: string, cwd?: string): Promise<ThreadSummary> =>
     manager.newThread(project, cwd)
   )
+  ipcMain.handle('thread:prewarm', (_e, cwd: string): Promise<void> => manager.prewarm(cwd))
   ipcMain.handle('thread:load', (_e, threadId: string): Promise<void> =>
     manager.loadThread(threadId)
   )

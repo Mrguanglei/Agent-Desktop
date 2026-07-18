@@ -37,11 +37,6 @@ export function Sidebar(): JSX.Element {
     return out
   }, [threads, projects])
 
-  const recent = useMemo(
-    () => [...threads].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5),
-    [threads]
-  )
-
   const handleAddProject = async (): Promise<void> => {
     const dir = await api.pickDirectory()
     if (dir) await addProject(dir)
@@ -84,19 +79,6 @@ export function Sidebar(): JSX.Element {
             点击上方 ＋ 打开项目文件夹开始
           </p>
         )}
-      </div>
-
-      <SectionHeader label="任务" />
-      <div className="max-h-44 shrink-0 overflow-y-auto px-2 pb-2">
-        {recent.map((t) => (
-          <ThreadRow
-            key={t.id}
-            thread={t}
-            active={t.id === activeThreadId}
-            onClick={() => openThread(t.id)}
-            onDelete={() => setDeleting(t)}
-          />
-        ))}
       </div>
 
       <AccountMenu />
@@ -223,10 +205,6 @@ function NavRow({
       {label}
     </button>
   )
-}
-
-function SectionHeader({ label }: { label: string }): JSX.Element {
-  return <div className="px-4 pb-1 pt-3 text-[11px] font-medium text-neutral-400">{label}</div>
 }
 
 function ProjectGroup({

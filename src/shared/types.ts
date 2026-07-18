@@ -201,6 +201,8 @@ export interface AppSettings {
 export interface GrokApi {
   getBootstrap(): Promise<BootstrapInfo>
   newThread(project?: string, cwd?: string): Promise<ThreadSummary>
+  /** 输入框聚焦时预热：后台建好会话备用，发送时零等待 */
+  prewarm(cwd: string): Promise<void>
   /** 加载历史会话（session/load 回放）；幂等 */
   loadThread(threadId: string): Promise<void>
   /** 重命名会话（_x.ai/session/rename） */

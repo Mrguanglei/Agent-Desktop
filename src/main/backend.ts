@@ -65,6 +65,8 @@ export class BackendManager implements BackendSink {
     projects: []
   }
   private readonly pty: PtyManager
+  /** 预热会话：home 输入框聚焦时后台建好的待用一个（未采用前不进列表，退出时清理） */
+  private prewarmed: { backend: AgentBackend; sessionId: string; cwd: string } | null = null
 
   constructor(
     private readonly send: (ev: BackendEvent) => void,
@@ -152,7 +154,31 @@ export class BackendManager implements BackendSink {
     return this.settings
   }
 
+  /** 输入框聚焦时预热：后台建好会话备用，发送时零等待 */
+  async prewarm(cwd: string): Promise<void> {
+    if (this.prewarmed && this.prewarmed.cwd === cwd) return
+    await this.discardPrewarmed()
+    const backend = this.createBackend()
+    try {
+      const sessionId = await backend.startSession(randomUUID(), cwd, {
+        modelId: this.currentModelId ?? undefined
+      })
+      this.prewarmed = { backend, sessionId, cwd }
+    } catch {
+      /* 预热失败静默：发送时走正常创建流程 */
+    }
+  }
+
   /** 更新设置：持久化到 userData/settings.json 并立即生效 */
+  /** 丢弃未采用的预热会话（grok 侧同步删除，不污染列表） */
+  private async discardPrewarmed(): Promise<void> {
+    if (!this.prewarmed) return
+    const { backend, sessionId } = this.prewarmed
+    this.prewarmed = null
+    backend.disposeAll()
+    await this.meta?.deleteSession(sessionId).catch(() => false)
+  }
+
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     this.settings = { ...this.settings, ...patch }
     if (patch.approvalMode) this.approvalMode = patch.approvalMode
@@ -186,6 +212,26 @@ export class BackendManager implements BackendSink {
 
   async newThread(project?: string, cwd?: string): Promise<ThreadSummary> {
     const workdir = cwd ?? this.defaultCwd
+    // 命中预热会话：直接采用，发送零握手等待
+    if (this.prewarmed && this.prewarmed.cwd === workdir) {
+      const { backend, sessionId } = this.prewarmed
+      this.prewarmed = null
+      const thread: ThreadSummary = {
+        id: sessionId,
+        project: project ?? this.projectLabel(workdir),
+        title: '新任务',
+        cwd: workdir,
+        updatedAt: Date.now(),
+        status: 'idle'
+      }
+      this.threads.set(thread.id, thread)
+      this.backends.set(thread.id, backend)
+      if (this.settings.effortId && this.currentModelId) {
+        void backend.setSessionEffort(thread.id, this.currentModelId, this.settings.effortId)
+      }
+      this.emit({ type: 'thread_updated', thread })
+      return thread
+    }
     const backend = this.createBackend()
     const sessionId = await backend.startSession(randomUUID(), workdir, {
       modelId: this.currentModelId ?? undefined
@@ -246,9 +292,11 @@ export class BackendManager implements BackendSink {
 
   /** 删除（R2.5）：杀掉对应后端进程 + _x.ai/session/delete + 移除列表项 */
   async deleteThread(threadId: string): Promise<void> {
+    console.log(`[manager] deleteThread ${threadId} meta=${this.meta ? 'ok' : 'null'}`)
     this.backends.get(threadId)?.disposeAll()
     this.backends.delete(threadId)
     const ok = (await this.meta?.deleteSession(threadId)) ?? false
+    console.log(`[manager] deleteSession result=${ok}`)
     if (ok || this.mode === 'mock') {
       this.threads.delete(threadId)
       this.emit({ type: 'thread_removed', threadId })
@@ -453,6 +501,12 @@ export class BackendManager implements BackendSink {
     this.backends.clear()
     this.meta?.dispose()
     this.pty.disposeAll()
+    if (this.prewarmed) {
+      const { backend, sessionId } = this.prewarmed
+      this.prewarmed = null
+      backend.disposeAll()
+      void this.meta?.deleteSession(sessionId).catch(() => false)
+    }
   }
 
   private async ensureBackend(threadId: string): Promise<AgentBackend> {
@@ -499,6 +553,7 @@ export class BackendManager implements BackendSink {
   }
 
   private projectLabel(cwd: string): string {
+    if (cwd === homedir()) return '主目录'
     return cwd.split('/').filter(Boolean).pop() ?? cwd
   }
 

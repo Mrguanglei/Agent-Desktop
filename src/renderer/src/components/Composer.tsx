@@ -143,6 +143,10 @@ export function Composer({
               const m = e.target.value.slice(0, caret).match(/@([^\s@]*)$/)
               setMentionQuery(m ? m[1] : null)
             }}
+            onFocus={() => {
+              // 输入框聚焦即预热会话：发送时零握手等待
+              if (!threadId && cwd) void api.prewarm(cwd)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 setMentionQuery(null)
