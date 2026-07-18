@@ -35,9 +35,8 @@ export function ChatView({ threadId }: { threadId: string }): JSX.Element {
               加载历史会话…
             </div>
           ) : (
-            <MessageList items={items} />
+            <MessageList items={items} chat={chat} />
           )}
-          {chat?.running && <TurnStatus chat={chat} />}
           <Composer
             threadId={threadId}
             project={thread?.project ?? null}
@@ -81,10 +80,10 @@ function TurnStatus({ chat }: { chat: ThreadChat }): JSX.Element {
   const mm = Math.floor(elapsed / 60)
   const ss = String(elapsed % 60).padStart(2, '0')
   return (
-    <div className="flex items-center gap-2 px-6 pb-2 text-xs text-neutral-400">
+    <div className="mb-3 flex items-center gap-2 text-xs text-neutral-400">
       <span className="h-3 w-3 animate-spin rounded-full border border-neutral-300 border-t-transparent" />
       <span>{status}</span>
-      <span className="ml-auto text-neutral-300">已处理 {mm}:{ss}</span>
+      <span className="text-neutral-300">已处理 {mm}:{ss}</span>
     </div>
   )
 }
@@ -201,7 +200,13 @@ function PlanIcon({ status }: { status: PlanEntry['status'] }): JSX.Element {
   return <span className="text-neutral-300">○</span>
 }
 
-function MessageList({ items }: { items: ChatItem[] }): JSX.Element {
+function MessageList({
+  items,
+  chat
+}: {
+  items: ChatItem[]
+  chat: ThreadChat | undefined
+}): JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
@@ -214,6 +219,8 @@ function MessageList({ items }: { items: ChatItem[] }): JSX.Element {
         ) : (
           items.map((it) => <MessageItem key={it.id} item={it} />)
         )}
+        {/* 回合状态行内联在消息流末尾（对标 Codex 的「已处理 Xs」位置） */}
+        {chat?.running && <TurnStatus chat={chat} />}
         <div ref={bottomRef} />
       </div>
     </div>
