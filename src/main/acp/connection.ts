@@ -62,7 +62,9 @@ export class JsonRpcConnection {
     const id = this.nextId++
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
-      this.send({ jsonrpc: '2.0', id, method, params })
+      // 注意：grok 的部分 ext 方法（_x.ai/auth/info、billing 等）要求 params 字段必须存在，
+      // undefined 会被 JSON.stringify 丢弃导致 -32602 Invalid params，统一兜底为空对象
+      this.send({ jsonrpc: '2.0', id, method, params: params ?? {} })
     })
   }
 

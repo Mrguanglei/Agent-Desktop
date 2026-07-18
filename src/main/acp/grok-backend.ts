@@ -229,11 +229,18 @@ export class GrokAcpBackend implements AgentBackend {
     if (!s) return null
     try {
       const [info, billing] = await Promise.all([
-        extRequest(s.conn, 'auth/info').catch(() => null),
-        extRequest(s.conn, 'billing').catch(() => null)
+        extRequest(s.conn, 'auth/info').catch((err) => {
+          console.error('[backend] auth/info failed:', err instanceof Error ? err.message : err)
+          return null
+        }),
+        extRequest(s.conn, 'billing').catch((err) => {
+          console.error('[backend] billing failed:', err instanceof Error ? err.message : err)
+          return null
+        })
       ])
       return parseAccount(info, billing)
-    } catch {
+    } catch (err) {
+      console.error('[backend] fetchAccount failed:', err)
       return null
     }
   }

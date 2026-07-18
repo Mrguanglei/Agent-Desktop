@@ -31,7 +31,8 @@ export class MetaAcpClient {
     try {
       await client.handshake()
       return client
-    } catch {
+    } catch (err) {
+      console.error('[meta] handshake failed:', err)
       client.dispose()
       return null
     }
@@ -82,8 +83,14 @@ export class MetaAcpClient {
     this.models = parseModels(created?.models)
 
     const [info, billing] = await Promise.all([
-      extRequest(this.conn, 'auth/info').catch(() => null),
-      extRequest(this.conn, 'billing').catch(() => null)
+      extRequest(this.conn, 'auth/info').catch((err) => {
+        console.error('[meta] auth/info failed:', err instanceof Error ? err.message : err)
+        return null
+      }),
+      extRequest(this.conn, 'billing').catch((err) => {
+        console.error('[meta] billing failed:', err instanceof Error ? err.message : err)
+        return null
+      })
     ])
     this.account = parseAccount(info, billing)
   }
