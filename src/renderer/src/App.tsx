@@ -40,6 +40,7 @@ export default function App(): JSX.Element {
       if (
         ev.type === 'backend_status' ||
         ev.type === 'thread_updated' ||
+        ev.type === 'thread_removed' ||
         ev.type === 'models' ||
         ev.type === 'account' ||
         ev.type === 'effort'
