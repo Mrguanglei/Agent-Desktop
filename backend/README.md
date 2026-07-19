@@ -42,6 +42,9 @@ GROK_CLI_CHAT_PROXY_BASE_URL=http://127.0.0.1:8399/v1 grok
 
 ## 路线图
 
-- MVP（当前）：透传网关 + 目录合并 + 健康检查
-- V1：身份中心（OIDC 验签）、组织/工作区/角色模型、计量流水 + 层级限额（402 语义）
+- MVP（已完成）：透传网关 + 目录合并 + 健康检查
+- **V1（已完成）**：wbk_ 双模认证（SQLite 域模型：组织/工作区/用户/Key）、模型授权过滤、
+  配额硬限额（402 `workbuddy-blocked:spending-limit`）、模型权限（403）、SSE 用量计量、
+  **Web 管理后台 `/admin`**（Keys 管理/用量流水/上游凭证）、上游凭证热配置
+- V1.5：身份中心升级（OIDC 验签/SSO）、按模型费率卡、rate limit（RPM/TPM）
 - V2：`/v1/deployment/config` Ed25519 签名策略下发、审计事件流、SCIM

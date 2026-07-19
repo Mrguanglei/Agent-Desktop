@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>WorkBuddy 管理后台</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; }
+    body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f7f7f8; color: #1f2328; padding: 24px; max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 18px; margin-bottom: 4px; }
+    .sub { color: #888; font-size: 12px; margin-bottom: 20px; }
+    .card { background: #fff; border: 1px solid #e4e4e8; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 14px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f0f0f2; }
+    th { color: #888; font-weight: 500; }
+    code { background: #f0f0f2; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+    input, select { border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+    button { background: #1f2328; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+    button.ghost { background: #eee; color: #333; }
+    button.danger { background: #dc2626; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .muted { color: #999; font-size: 11px; }
+    .ok { color: #16a34a; } .err { color: #dc2626; }
+    #token-input { width: 420px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h1>WorkBuddy 管理后台</h1>
+  <div class="sub">API Keys · 用量 · 上游凭证 · <span id="health"></span></div>
+
+  <div class="card">
+    <h2>上游凭证（网关转发到 xAI 使用的 token）</h2>
+    <div class="row">
+      <input id="token-input" type="password" placeholder="粘贴 xAI API Key / session token" />
+      <button onclick="saveToken()">保存</button>
+      <span id="token-status" class="muted"></span>
+    </div>
+    <div class="muted" style="margin-top:6px">wbk_ 模式下网关用此凭证访问上游模型；可从 console.x.ai 创建 API Key，或取 ~/.grok/auth.json 的 key 字段</div>
+  </div>
+
+  <div class="card">
+    <h2>API Keys</h2>
+    <div class="row" style="margin-bottom:10px">
+      <input id="k-label" placeholder="标签（如：光磊的 Mac）" />
+      <input id="k-quota" type="number" value="10" style="width:80px" title="配额（美元）" />
+      <input id="k-models" value="*" style="width:200px" title="模型授权，逗号分隔；* = 全部" />
+      <button onclick="createKey()">创建 Key</button>
+    </div>
+    <table>
+      <thead><tr><th>标签</th><th>Key</th><th>模型授权</th><th>已用/配额</th><th>操作</th></tr></thead>
+      <tbody id="keys"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>最近用量（100 条）</h2>
+    <table>
+      <thead><tr><th>时间</th><th>Key</th><th>模型</th><th>输入 tokens</th><th>输出 tokens</th><th>成本</th></tr></thead>
+      <tbody id="usage"></tbody>
+    </table>
+  </div>
+
+<script>
+const ADMIN_TOKEN = localStorage.getItem('wb_admin_token') || prompt('输入 admin token（默认 dev-admin-token）') || ''
+localStorage.setItem('wb_admin_token', ADMIN_TOKEN)
+const H = { 'x-admin-token': ADMIN_TOKEN, 'Content-Type': 'application/json' }
+
+async function j(path, opts) {
+  const r = await fetch(path, { ...opts, headers: { ...H, ...(opts?.headers || {}) } })
+  return r.json()
+}
+function esc(s) { return String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+
+async function load() {
+  const health = await fetch('/health').then(r => r.json())
+  document.getElementById('health').textContent = `网关 v${health.version} 运行中`
+
+  const cfg = await j('/admin/api/config')
+  document.getElementById('token-status').textContent = cfg.upstreamTokenSet ? `已设置（${cfg.upstreamTokenPreview}）` : '未设置（wbk_ 模式将 401）'
+  document.getElementById('token-status').className = cfg.upstreamTokenSet ? 'ok' : 'err'
+
+  const { keys } = await j('/admin/api/keys')
+  document.getElementById('keys').innerHTML = keys.map(k => `
+    <tr>
+      <td>${esc(k.label)}</td>
+      <td><code>${esc(k.key.slice(0, 12))}…${esc(k.key.slice(-4))}</code>
+        <button class="ghost" onclick="navigator.clipboard.writeText('${k.key}')">复制</button></td>
+      <td>${esc(k.model_grants)}</td>
+      <td>$${k.used_usd.toFixed(4)} / $${k.quota_usd.toFixed(2)}</td>
+      <td>${k.revoked ? '<span class="muted">已吊销</span>' : `<button class="danger" onclick="revoke('${k.id}')">吊销</button>`}</td>
+    </tr>`).join('')
+
+  const { events } = await j('/admin/api/usage')
+  document.getElementById('usage').innerHTML = events.map(e => `
+    <tr>
+      <td>${new Date(e.created_at).toLocaleString()}</td>
+      <td>${esc(e.key_label)}</td>
+      <td>${esc(e.model)}</td>
+      <td>${e.input_tokens}</td>
+      <td>${e.output_tokens}</td>
+      <td>$${e.cost_usd.toFixed(6)}</td>
+    </tr>`).join('')
+}
+
+async function createKey() {
+  const label = document.getElementById('k-label').value.trim()
+  const quotaUsd = Number(document.getElementById('k-quota').value) || 10
+  const modelGrants = document.getElementById('k-models').value.split(',').map(s => s.trim()).filter(Boolean)
+  const r = await j('/admin/api/keys', { method: 'POST', body: JSON.stringify({ label, quotaUsd, modelGrants }) })
+  if (r.key) {
+    alert(`Key 已创建（只显示这一次，请复制保存）：\n\n${r.key}`)
+    load()
+  } else alert(JSON.stringify(r))
+}
+async function revoke(id) {
+  if (!confirm('吊销该 Key？')) return
+  await j(`/admin/api/keys/${id}/revoke`, { method: 'POST' })
+  load()
+}
+async function saveToken() {
+  const v = document.getElementById('token-input').value.trim()
+  if (!v) return
+  await j('/admin/api/config', { method: 'PUT', body: JSON.stringify({ upstreamToken: v }) })
+  document.getElementById('token-input').value = ''
+  load()
+}
+load()
+</script>
+</body>
+</html>

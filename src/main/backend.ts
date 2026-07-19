@@ -157,11 +157,16 @@ export class BackendManager implements BackendSink {
     return this.settings
   }
 
-  /** grok 子进程环境：自定义后端时注入 GROK_CLI_CHAT_PROXY_BASE_URL */
+  /** grok 子进程环境：自定义后端时注入 GROK_CLI_CHAT_PROXY_BASE_URL；
+   *  配了 wbk_ Key 时切换隔离 GROK_HOME + XAI_API_KEY（与 xAI 直连模式完全隔离） */
   private spawnEnv(): NodeJS.ProcessEnv {
     const env = { ...process.env }
     if (this.settings.backendUrl) {
       env['GROK_CLI_CHAT_PROXY_BASE_URL'] = this.settings.backendUrl
+    }
+    if (this.settings.backendUrl && this.settings.backendApiKey) {
+      env['GROK_HOME'] = join(homedir(), '.grok-workbuddy')
+      env['XAI_API_KEY'] = this.settings.backendApiKey
     }
     return env
   }

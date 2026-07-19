@@ -198,6 +198,7 @@ function OptionRow({
 function BackendTab(): JSX.Element {
   const { settings, updateSettings } = useAppStore()
   const [url, setUrl] = useState(settings?.backendUrl ?? '')
+  const [apiKey, setApiKey] = useState(settings?.backendApiKey ?? '')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
   const [testOk, setTestOk] = useState<boolean | null>(null)
@@ -248,6 +249,33 @@ function BackendTab(): JSX.Element {
           {testResult}
         </p>
       )}
+      <div className="mb-1 mt-4 text-[13px] font-medium text-neutral-700">后端 API Key（wbk_）</div>
+      <div className="mb-2 flex items-center gap-2">
+        <input
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="在管理后台创建的 wbk_… Key（可选）"
+          spellCheck={false}
+          type="password"
+          className="min-w-0 flex-1 rounded-md border border-surface-border bg-surface-0 px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-neutral-400"
+        />
+        <button
+          onClick={() => void updateSettings({ backendApiKey: apiKey.trim() || null })}
+          className="shrink-0 rounded-md bg-neutral-900 px-3 py-1.5 text-[12px] text-white hover:bg-neutral-700"
+        >
+          保存
+        </button>
+        <button
+          onClick={() => void api.openExternal('http://127.0.0.1:8399/admin')}
+          className="shrink-0 rounded-md border border-surface-border px-3 py-1.5 text-[12px] text-neutral-700 hover:bg-surface-2"
+        >
+          管理后台 ↗
+        </button>
+      </div>
+      <p className="mb-4 text-[11px] leading-relaxed text-neutral-400">
+        配置 Key 后，grok 将以隔离的 GROK_HOME（~/.grok-workbuddy）+ XAI_API_KEY 启动——
+        与 xAI 直连模式完全隔离，会话/账号都走你的后端身份体系。
+      </p>
       <div className="mb-4 rounded-md bg-surface-1 px-3 py-2 text-[11px] leading-relaxed text-neutral-500">
         当前生效：
         <code className="font-mono text-neutral-700">

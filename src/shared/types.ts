@@ -199,6 +199,8 @@ export interface AppSettings {
   backendUrl: string | null
   /** 用户是否手动配置过后端（true = 自动探测让位；缺省 false = 自动接入本地后端） */
   backendManual?: boolean
+  /** WorkBuddy 后端 API Key（wbk_…；设置后以隔离 GROK_HOME + XAI_API_KEY 启动 grok） */
+  backendApiKey?: string | null
 }
 
 /** preload 暴露到 window.grok 的 API */

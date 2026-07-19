@@ -28,25 +28,34 @@ const RESPONSE_HEADERS = [
   'x-grok-max-completion-tokens'
 ] as const
 
-function buildUpstreamHeaders(req: FastifyRequest): Record<string, string> {
+export interface ProxyOptions {
+  /** 覆盖发往上游的 Authorization（wbk_ 模式：换成网关持有的上游凭证） */
+  authOverride?: string | null
+  /** 流式正文的旁路监听（用于用量计量；可能很大，按 chunk 增量给） */
+  onChunk?: (text: string) => void
+}
+
+function buildUpstreamHeaders(req: FastifyRequest, opts?: ProxyOptions): Record<string, string> {
   const headers: Record<string, string> = {}
   for (const h of HOP_HEADERS) {
     const v = req.headers[h]
     if (typeof v === 'string') headers[h] = v
   }
   if (!config.passthroughAuth) delete headers['authorization']
+  if (opts?.authOverride) headers['authorization'] = opts.authOverride
   return headers
 }
 
-/** 通用上游代理：支持 SSE 流式直通 */
+/** 通用上游代理：支持 SSE 流式直通 + 可选正文旁路监听 */
 export async function proxyToUpstream(
   req: FastifyRequest,
   reply: FastifyReply,
-  upstreamPath: string
+  upstreamPath: string,
+  opts?: ProxyOptions
 ): Promise<void> {
   const upstream = await fetch(`${config.upstreamBaseUrl}${upstreamPath}`, {
     method: req.method,
-    headers: buildUpstreamHeaders(req),
+    headers: buildUpstreamHeaders(req, opts),
     body:
       req.method === 'GET' || req.method === 'HEAD' ? undefined : JSON.stringify(req.body ?? {})
   })
@@ -59,7 +68,18 @@ export async function proxyToUpstream(
     reply.send()
     return
   }
-  reply.send(Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream))
+  const source = Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream)
+  if (opts?.onChunk) {
+    const decoder = new TextDecoder()
+    source.on('data', (chunk: Buffer) => {
+      try {
+        opts.onChunk?.(decoder.decode(chunk, { stream: true }))
+      } catch {
+        /* 解码失败忽略 */
+      }
+    })
+  }
+  reply.send(source)
 }
 
 /** 仅取 JSON（用于目录合并等需要读上游正文的场景；失败返回 null 降级） */
@@ -76,4 +96,23 @@ export async function fetchUpstreamJson(
   } catch {
     return null
   }
+}
+
+/** 从响应正文（SSE 或 JSON）提取最后一个 usage 块（兼容 responses / chat.completions 两种形状） */
+export function extractUsage(text: string): { inputTokens: number; outputTokens: number } | null {
+  const matches = text.match(/"usage"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g)
+  if (!matches || matches.length === 0) return null
+  for (let i = matches.length - 1; i >= 0; i--) {
+    try {
+      const u = JSON.parse(matches[i].replace(/^"usage"\s*:\s*/, '')) as Record<string, number>
+      const input = u['input_tokens'] ?? u['prompt_tokens'] ?? u['inputTokens']
+      const output = u['output_tokens'] ?? u['completion_tokens'] ?? u['outputTokens']
+      if (typeof input === 'number' || typeof output === 'number') {
+        return { inputTokens: input ?? 0, outputTokens: output ?? 0 }
+      }
+    } catch {
+      /* 继续找前一个 */
+    }
+  }
+  return null
 }

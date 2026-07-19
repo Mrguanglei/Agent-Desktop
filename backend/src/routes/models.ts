@@ -32,12 +32,17 @@ interface UpstreamModels {
 /**
  * GET /v1/models —— 模型目录（OpenAI 兼容 { data: [...] } + ETag 直通）。
  * 合并策略：网关自有条目在前（同 id 覆盖上游），上游条目在后。
+ * wbk_ 模式：按 Key 的 model_grants 过滤。
  */
 export async function modelsRoute(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const upstream = await fetchUpstreamJson(req, '/models')
   const upstreamData = (upstream?.json as UpstreamModels | null)?.data ?? []
   const localIds = new Set(localModels.map((m) => m.id))
-  const merged = [...localModels, ...upstreamData.filter((m) => m.id && !localIds.has(m.id))]
+  let merged = [...localModels, ...upstreamData.filter((m) => m.id && !localIds.has(m.id))]
+  const grants = req.principal?.modelGrants
+  if (grants && !grants.includes('*')) {
+    merged = merged.filter((m) => m.id && grants.includes(m.id))
+  }
   if (upstream?.etag) reply.header('etag', upstream.etag)
   reply.send({ data: merged })
 }
