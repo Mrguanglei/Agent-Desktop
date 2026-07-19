@@ -196,21 +196,22 @@ export class BackendManager implements BackendSink {
     }
     return null
   }
-  /** 测试后端连通性（/health → /v1/models 逐级尝试，任何 HTTP 响应即视为可达） */
+  /** 测试后端连通性：依次探测 {base}/models（契约端点）与 {去v1}/health，任一 2xx 即通过 */
   async testBackend(url: string): Promise<{ ok: boolean; detail: string }> {
     const base = url.replace(/\/$/, '')
-    for (const path of ['/health', '/v1/models']) {
+    const noV1 = base.replace(/\/v1$/, '')
+    const candidates = [`${base}/models`, `${base}/health`, `${noV1}/health`]
+    let lastDetail = ''
+    for (const u of candidates) {
       try {
-        const resp = await fetch(`${base}${path}`, {
-          signal: AbortSignal.timeout(4000)
-        })
-        return { ok: resp.ok, detail: `${path} → HTTP ${resp.status}` }
-      } catch (err) {
-        // 继续尝试下一个路径
-        void err
+        const resp = await fetch(u, { signal: AbortSignal.timeout(4000) })
+        if (resp.ok) return { ok: true, detail: `${u} → HTTP ${resp.status}` }
+        lastDetail = `${u} → HTTP ${resp.status}`
+      } catch {
+        lastDetail = `${u} → 连接失败`
       }
     }
-    return { ok: false, detail: '连接失败（地址不可达或服务未启动）' }
+    return { ok: false, detail: lastDetail || '连接失败（地址不可达或服务未启动）' }
   }
 
   /** 输入框聚焦时预热：后台建好会话备用，发送时零等待 */
