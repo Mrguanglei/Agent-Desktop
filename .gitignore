@@ -7,3 +7,4 @@ backend/dist/
 .DS_Store
 .research/codex-app-server-ts/
 .research/codex-app-server-schema/
+backend/workbuddy.db*
