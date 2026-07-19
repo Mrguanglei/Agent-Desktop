@@ -93,6 +93,8 @@ export class BackendManager implements BackendSink {
     this.emit({ type: 'backend_status', mode: this.mode, detail: this.detail })
 
     if (this.mode === 'acp' && this.grokBin) {
+      // 前后端是一家：本地 workbuddy-backend 在跑且用户未手动配置时，静默自动接入
+      await this.applyLocalBackendIfAny()
       // 预热元数据会话：模型列表 + 账号信息（失败不阻塞，线程建立时再补）
       this.meta = await MetaAcpClient.start(this.grokBin, this.defaultCwd, this.spawnEnv())
       if (this.meta) {
@@ -164,6 +166,36 @@ export class BackendManager implements BackendSink {
     return env
   }
 
+  /** 前后端一家亲：本地 workbuddy-backend 在跑且用户未手动配置时，静默自动接入 */
+  private async applyLocalBackendIfAny(): Promise<boolean> {
+    if (this.settings.backendManual || this.settings.backendUrl) return false
+    const url = await this.probeLocalBackend()
+    if (!url) return false
+    this.settings.backendUrl = url
+    try {
+      writeFileSync(this.settingsPath(), JSON.stringify(this.settings, null, 2), 'utf8')
+    } catch {
+      /* 持久化失败不影响使用 */
+    }
+    this.detail = `已自动连接本地后端 ${url}（workbuddy-backend）`
+    this.emit({ type: 'backend_status', mode: this.mode, detail: this.detail })
+    return true
+  }
+
+  /** 探测本机运行的 workbuddy-backend（/health 标识），返回 /v1 地址或 null */
+  private async probeLocalBackend(): Promise<string | null> {
+    for (const base of ['http://127.0.0.1:8399']) {
+      try {
+        const resp = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1500) })
+        if (!resp.ok) continue
+        const body = (await resp.json()) as { service?: string }
+        if (body.service === 'workbuddy-backend') return `${base}/v1`
+      } catch {
+        /* 未运行则忽略 */
+      }
+    }
+    return null
+  }
   /** 测试后端连通性（/health → /v1/models 逐级尝试，任何 HTTP 响应即视为可达） */
   async testBackend(url: string): Promise<{ ok: boolean; detail: string }> {
     const base = url.replace(/\/$/, '')
@@ -208,6 +240,10 @@ export class BackendManager implements BackendSink {
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     const backendChanged =
       patch.backendUrl !== undefined && patch.backendUrl !== this.settings.backendUrl
+    // 用户在设置页显式保存后端地址 → 标记为手动选择（自动探测让位）
+    if (patch.backendUrl !== undefined && patch.backendManual === undefined) {
+      patch.backendManual = true
+    }
     this.settings = { ...this.settings, ...patch }
     if (patch.approvalMode) this.approvalMode = patch.approvalMode
     if (patch.defaultCwd) this.defaultCwd = patch.defaultCwd
@@ -218,9 +254,14 @@ export class BackendManager implements BackendSink {
       /* 持久化失败不阻塞使用 */
     }
     if (backendChanged) {
-      // 后端切换：预热会话作废 + meta 连接带新环境重连（已有线程会话保持原后端直至重建）
-      void this.discardPrewarmed()
-      void this.restartMeta()
+      // 后端切换：预热会话作废；恢复自动探测时先尝试重连本地后端；meta 带新环境重连
+      void (async () => {
+        await this.discardPrewarmed()
+        if (!this.settings.backendUrl && !this.settings.backendManual) {
+          await this.applyLocalBackendIfAny()
+        }
+        await this.restartMeta()
+      })()
     }
     return this.settings
   }

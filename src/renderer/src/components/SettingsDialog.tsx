@@ -253,13 +253,31 @@ function BackendTab(): JSX.Element {
         <code className="font-mono text-neutral-700">
           {settings.backendUrl ?? 'https://cli-chat-proxy.grok.com/v1（xAI 官方）'}
         </code>
+        {settings.backendUrl && !settings.backendManual && (
+          <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">
+            自动连接
+          </span>
+        )}
+        {settings.backendUrl && settings.backendManual && (
+          <span className="ml-2 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-neutral-500">
+            手动配置
+          </span>
+        )}
       </div>
       <p className="text-[11px] leading-relaxed text-neutral-400">
-        指向任何 cli-chat-proxy 兼容网关（如本地运行的 workbuddy-backend：
-        <code className="font-mono">http://127.0.0.1:8399/v1</code>
-        ）。保存后新会话立即走新后端，账号/会话列表/搜索的元数据连接自动重连；
-        已有线程会话保持原后端直至重建。本地网关可用{' '}
-        <code className="font-mono">npm run dev:backend</code> 启动。
+        前后端是一家：本机 workbuddy-backend 运行时（
+        <code className="font-mono">npm run dev:backend</code>）会自动接入，无需任何配置。
+        手动保存地址后将不再自动接入（标记为手动配置）。
+        {settings.backendManual && (
+          <button
+            onClick={() =>
+              void updateSettings({ backendUrl: null, backendManual: false })
+            }
+            className="ml-1 text-accent hover:underline"
+          >
+            恢复自动探测
+          </button>
+        )}
       </p>
     </div>
   )

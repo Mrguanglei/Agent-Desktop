@@ -197,6 +197,8 @@ export interface AppSettings {
   projects: { name: string; path: string }[]
   /** 自定义后端地址（GROK_CLI_CHAT_PROXY_BASE_URL；null = xAI 官方） */
   backendUrl: string | null
+  /** 用户是否手动配置过后端（true = 自动探测让位；缺省 false = 自动接入本地后端） */
+  backendManual?: boolean
 }
 
 /** preload 暴露到 window.grok 的 API */

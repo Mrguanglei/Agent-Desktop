@@ -10,6 +10,8 @@ const app = Fastify({
 })
 
 app.get('/health', () => ({ ok: true, service: 'workbuddy-backend', version: '0.1.0' }))
+// grok 自身的健康探测路径是 {proxy}/v1/health
+app.get('/v1/health', () => ({ ok: true, service: 'workbuddy-backend', version: '0.1.0' }))
 
 // ---- cli-chat-proxy 兼容契约（grok 客户端零改动接入） ----
 app.get('/v1/models', modelsRoute)
