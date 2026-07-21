@@ -2,184 +2,280 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>WorkBuddy 管理后台</title>
+  <title>WorkBuddy 管理控制台</title>
   <style>
     * { box-sizing: border-box; margin: 0; }
-    body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f7f7f8; color: #1f2328; padding: 24px; max-width: 960px; margin: 0 auto; }
-    h1 { font-size: 18px; margin-bottom: 4px; }
-    .sub { color: #888; font-size: 12px; margin-bottom: 20px; }
-    .card { background: #fff; border: 1px solid #e4e4e8; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f5f6f8; color: #1f2328; display: flex; min-height: 100vh; }
+    /* ---- 侧边栏 ---- */
+    aside { width: 220px; background: #17191d; color: #c9cdd4; display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
+    .logo { padding: 18px 16px; font-size: 15px; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
+    .logo span { color: #4f8cff; }
+    nav { flex: 1; padding: 8px; }
+    nav a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; color: #c9cdd4; text-decoration: none; font-size: 13px; margin-bottom: 2px; }
+    nav a:hover { background: #23262c; color: #fff; }
+    nav a.on { background: #2b4a80; color: #fff; }
+    .side-foot { padding: 12px 16px; font-size: 11px; color: #6b7280; border-top: 1px solid #23262c; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #22c55e; margin-right: 5px; }
+    /* ---- 内容区 ---- */
+    main { flex: 1; padding: 24px 28px; max-width: 1100px; }
+    h1 { font-size: 18px; margin-bottom: 16px; }
+    .card { background: #fff; border: 1px solid #e6e8ec; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
     .card h2 { font-size: 14px; margin-bottom: 12px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f0f0f2; }
-    th { color: #888; font-weight: 500; }
-    code { background: #f0f0f2; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
-    input, select { border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+    th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #f0f1f4; }
+    th { color: #8a8f99; font-weight: 500; }
+    tr:hover td { background: #fafbfc; }
+    code { background: #f0f1f4; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+    input, select { border: 1px solid #d8dbe0; border-radius: 6px; padding: 6px 8px; font-size: 12px; background: #fff; }
+    input:focus, select:focus { outline: 1px solid #4f8cff; border-color: #4f8cff; }
     button { background: #1f2328; color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
-    button.ghost { background: #eee; color: #333; }
+    button.ghost { background: #eef0f3; color: #333; }
     button.danger { background: #dc2626; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .muted { color: #999; font-size: 11px; }
+    .muted { color: #9aa0a8; font-size: 11px; }
     .ok { color: #16a34a; } .err { color: #dc2626; }
-    #token-input { width: 420px; font-family: monospace; }
+    /* ---- 仪表盘 ---- */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .stat { background: #fff; border: 1px solid #e6e8ec; border-radius: 10px; padding: 14px 16px; }
+    .stat .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .stat .k { font-size: 11px; color: #8a8f99; }
+    .role-tag { border-radius: 4px; padding: 1px 6px; font-size: 10px; }
+    .role-admin { background: #e8efff; color: #2b4a80; }
+    .role-member { background: #f0f1f4; color: #666; }
+    .pill { border-radius: 999px; padding: 1px 8px; font-size: 10px; }
+    .pill-on { background: #dcfce7; color: #16a34a; }
+    .pill-off { background: #f0f1f4; color: #9aa0a8; }
   </style>
 </head>
 <body>
-  <h1>WorkBuddy 管理后台</h1>
-  <div class="sub">API Keys · 用量 · 上游凭证 · <span id="health"></span></div>
-
-  <div class="card">
-    <h2>上游凭证（网关转发到 xAI 使用的 token）</h2>
-    <div class="row">
-      <input id="token-input" type="password" placeholder="粘贴 xAI API Key / session token" />
-      <button onclick="saveToken()">保存</button>
-      <span id="token-status" class="muted"></span>
-    </div>
-    <div class="muted" style="margin-top:6px">wbk_ 模式下网关用此凭证访问上游模型；可从 console.x.ai 创建 API Key，或取 ~/.grok/auth.json 的 key 字段</div>
-  </div>
-
-  <div class="card">
-    <h2>Provider 模型（豆包 / Kimi / GLM / DeepSeek…，OpenAI 兼容端点）</h2>
-    <div class="row" style="margin-bottom:10px">
-      <input id="m-id" placeholder="展示 id（如 kimi-k2）" style="width:150px" />
-      <input id="m-upstream" placeholder="厂商模型名（如 kimi-k2-0905-preview）" style="width:210px" />
-      <input id="m-base" placeholder="端点（如 https://api.moonshot.cn/v1）" style="width:280px" />
-      <input id="m-key" type="password" placeholder="厂商 API Key" style="width:180px" />
-      <input id="m-ctx" type="number" value="128000" style="width:90px" title="上下文窗口" />
-      <button onclick="addModel()">添加模型</button>
-    </div>
-    <div class="muted" style="margin-bottom:8px">
-      常用端点：Kimi <code>https://api.moonshot.cn/v1</code> · 豆包 <code>https://ark.cn-beijing.volces.com/api/v3</code> · DeepSeek <code>https://api.deepseek.com/v1</code> · GLM <code>open.bigmodel.cn/api/paas/v4</code>
-    </div>
-    <table>
-      <thead><tr><th>展示 id</th><th>厂商模型</th><th>端点</th><th>Key</th><th>上下文</th><th>状态</th><th>操作</th></tr></thead>
-      <tbody id="models"></tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <h2>API Keys</h2>
-    <div class="row" style="margin-bottom:10px">
-      <input id="k-label" placeholder="标签（如：光磊的 Mac）" />
-      <input id="k-quota" type="number" value="10" style="width:80px" title="配额（美元）" />
-      <input id="k-models" value="*" style="width:200px" title="模型授权，逗号分隔；* = 全部" />
-      <button onclick="createKey()">创建 Key</button>
-    </div>
-    <table>
-      <thead><tr><th>标签</th><th>Key</th><th>模型授权</th><th>已用/配额</th><th>操作</th></tr></thead>
-      <tbody id="keys"></tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <h2>最近用量（100 条）</h2>
-    <table>
-      <thead><tr><th>时间</th><th>Key</th><th>模型</th><th>输入 tokens</th><th>输出 tokens</th><th>成本</th></tr></thead>
-      <tbody id="usage"></tbody>
-    </table>
-  </div>
+  <aside>
+    <div class="logo">Work<span>Buddy</span> 控制台</div>
+    <nav id="nav">
+      <a href="#/dashboard" data-p="dashboard">📊 仪表盘</a>
+      <a href="#/users" data-p="users">👥 用户管理</a>
+      <a href="#/keys" data-p="keys">🔑 API Keys</a>
+      <a href="#/models" data-p="models">🤖 模型管理</a>
+      <a href="#/usage" data-p="usage">📈 用量流水</a>
+      <a href="#/settings" data-p="settings">⚙️ 设置</a>
+    </nav>
+    <div class="side-foot"><span class="dot"></span><span id="gw">网关连接中…</span></div>
+  </aside>
+  <main id="main"></main>
 
 <script>
 const ADMIN_TOKEN = localStorage.getItem('wb_admin_token') || prompt('输入 admin token（默认 dev-admin-token）') || ''
 localStorage.setItem('wb_admin_token', ADMIN_TOKEN)
 const H = { 'x-admin-token': ADMIN_TOKEN, 'Content-Type': 'application/json' }
+const $ = (s) => document.querySelector(s)
+const main = $('#main')
 
 async function j(path, opts) {
   const r = await fetch(path, { ...opts, headers: { ...H, ...(opts?.headers || {}) } })
+  if (r.status === 401) { alert('admin token 错误，请刷新重输'); localStorage.removeItem('wb_admin_token'); location.reload() }
   return r.json()
 }
 function esc(s) { return String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) }
+function fmt$(n) { return '$' + Number(n || 0).toFixed(4) }
+function fmtT(n) { return n >= 1e6 ? (n/1e6).toFixed(2) + 'M' : n >= 1e3 ? (n/1e3).toFixed(1) + 'K' : String(n||0) }
 
-async function load() {
-  const health = await fetch('/health').then(r => r.json())
-  document.getElementById('health').textContent = `网关 v${health.version} 运行中`
+/* ============ 页面：仪表盘 ============ */
+async function pageDashboard() {
+  const s = await j('/admin/api/stats')
+  main.innerHTML = `<h1>仪表盘</h1>
+  <div class="stats">
+    <div class="stat"><div class="k">用户总数</div><div class="v">${s.users}</div></div>
+    <div class="stat"><div class="k">有效 API Keys</div><div class="v">${s.activeKeys}</div></div>
+    <div class="stat"><div class="k">总调用次数</div><div class="v">${fmtT(s.callsTotal)}</div></div>
+    <div class="stat"><div class="k">总成本</div><div class="v">${fmt$(s.costTotalUsd)}</div></div>
+  </div>
+  <div class="stats" style="grid-template-columns: repeat(3, 1fr)">
+    <div class="stat"><div class="k">今日调用</div><div class="v">${s.today.calls}</div></div>
+    <div class="stat"><div class="k">今日 Tokens（入/出）</div><div class="v" style="font-size:16px">${fmtT(s.today.inputTokens)} / ${fmtT(s.today.outputTokens)}</div></div>
+    <div class="stat"><div class="k">今日成本</div><div class="v">${fmt$(s.today.costUsd)}</div></div>
+  </div>
+  <div class="card"><h2>按模型分布（Top 10）</h2>
+    <table><thead><tr><th>模型</th><th>调用</th><th>Tokens</th><th>成本</th></tr></thead>
+    <tbody>${s.byModel.map(m => `<tr><td><code>${esc(m.model)}</code></td><td>${m.calls}</td><td>${fmtT(m.tokens)}</td><td>${fmt$(m.costUsd)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">暂无数据</td></tr>'}</tbody></table>
+  </div>
+  <div class="card"><h2>近 14 天趋势</h2>
+    <table><thead><tr><th>日期</th><th>调用</th><th>Tokens</th><th>成本</th></tr></thead>
+    <tbody>${s.byDay.map(d => `<tr><td>${d.day}</td><td>${d.calls}</td><td>${fmtT(d.tokens)}</td><td>${fmt$(d.costUsd)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">暂无数据</td></tr>'}</tbody></table>
+  </div>`
+}
 
-  const cfg = await j('/admin/api/config')
-  document.getElementById('token-status').textContent = cfg.upstreamTokenSet ? `已设置（${cfg.upstreamTokenPreview}）` : '未设置（wbk_ 模式将 401）'
-  document.getElementById('token-status').className = cfg.upstreamTokenSet ? 'ok' : 'err'
+/* ============ 页面：用户管理 ============ */
+async function pageUsers() {
+  const [{ users }, { workspaces }] = await Promise.all([j('/admin/api/users'), j('/admin/api/workspaces')])
+  main.innerHTML = `<h1>用户管理</h1>
+  <div class="card"><h2>新建用户</h2><div class="row">
+    <input id="u-email" placeholder="邮箱（登录标识）" style="width:220px" />
+    <input id="u-name" placeholder="显示名" style="width:140px" />
+    <select id="u-role"><option value="member">member（普通成员）</option><option value="admin">admin（管理员）</option></select>
+    <select id="u-ws">${workspaces.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('')}</select>
+    <button onclick="createUser()">创建</button>
+    <button class="ghost" onclick="createWs()">＋ 新建工作区</button>
+  </div></div>
+  <div class="card"><h2>成员（${users.length}）</h2>
+  <table><thead><tr><th>邮箱</th><th>显示名</th><th>角色</th><th>工作区</th><th>有效 Keys</th><th>创建时间</th><th>操作</th></tr></thead>
+  <tbody>${users.map(u => `<tr>
+    <td>${esc(u.email)}</td><td>${esc(u.display_name)}</td>
+    <td><span class="role-tag role-${u.role}">${u.role}</span></td>
+    <td>${esc(u.workspace_name)}</td><td>${u.key_count}</td>
+    <td class="muted">${new Date(u.created_at).toLocaleDateString()}</td>
+    <td>
+      <button class="ghost" onclick="setRole('${u.id}','${u.role === 'admin' ? 'member' : 'admin'}')">设为${u.role === 'admin' ? '成员' : '管理员'}</button>
+      <button class="danger" onclick="delUser('${u.id}','${esc(u.email)}')">删除</button>
+    </td></tr>`).join('')}</tbody></table></div>`
+}
+window.createUser = async () => {
+  const body = { email: $('#u-email').value.trim(), displayName: $('#u-name').value.trim(), role: $('#u-role').value, workspaceId: $('#u-ws').value }
+  if (!body.email) return alert('邮箱必填')
+  await j('/admin/api/users', { method: 'POST', body: JSON.stringify(body) })
+  pageUsers()
+}
+window.createWs = async () => {
+  const name = prompt('工作区名称（如：研发部）')
+  if (!name?.trim()) return
+  await j('/admin/api/workspaces', { method: 'POST', body: JSON.stringify({ name: name.trim() }) })
+  pageUsers()
+}
+window.setRole = async (id, role) => { await j(`/admin/api/users/${id}/role`, { method: 'POST', body: JSON.stringify({ role }) }); pageUsers() }
+window.delUser = async (id, email) => {
+  if (!confirm(`删除用户 ${email}？其全部 API Key 将被吊销`)) return
+  await j(`/admin/api/users/${id}/delete`, { method: 'POST' }); pageUsers()
+}
 
+/* ============ 页面：API Keys ============ */
+async function pageKeys() {
   const { keys } = await j('/admin/api/keys')
-  document.getElementById('keys').innerHTML = keys.map(k => `
-    <tr>
-      <td>${esc(k.label)}</td>
-      <td><code>${esc(k.key.slice(0, 12))}…${esc(k.key.slice(-4))}</code>
-        <button class="ghost" onclick="navigator.clipboard.writeText('${k.key}')">复制</button></td>
-      <td>${esc(k.model_grants)}</td>
-      <td>$${k.used_usd.toFixed(4)} / $${k.quota_usd.toFixed(2)}</td>
-      <td>${k.revoked ? '<span class="muted">已吊销</span>' : `<button class="danger" onclick="revoke('${k.id}')">吊销</button>`}</td>
-    </tr>`).join('')
-
-  const { events } = await j('/admin/api/usage')
-  document.getElementById('usage').innerHTML = events.map(e => `
-    <tr>
-      <td>${new Date(e.created_at).toLocaleString()}</td>
-      <td>${esc(e.key_label)}</td>
-      <td>${esc(e.model)}</td>
-      <td>${e.input_tokens}</td>
-      <td>${e.output_tokens}</td>
-      <td>$${e.cost_usd.toFixed(6)}</td>
-    </tr>`).join('')
-
-  const { models } = await j('/admin/api/models')
-  document.getElementById('models').innerHTML = models.map(m => `
-    <tr>
-      <td><code>${esc(m.display_id)}</code></td>
-      <td>${esc(m.upstream_model)}</td>
-      <td class="muted">${esc(m.base_url)}</td>
-      <td class="muted">${esc(m.api_key)}</td>
-      <td>${m.context_window}</td>
-      <td>${m.enabled ? '<span class="ok">启用</span>' : '<span class="muted">停用</span>'}</td>
-      <td>
-        <button class="ghost" onclick="toggleModel('${m.id}', ${m.enabled ? 'false' : 'true'})">${m.enabled ? '停用' : '启用'}</button>
-        <button class="danger" onclick="delModel('${m.id}')">删除</button>
-      </td>
-    </tr>`).join('')
+  main.innerHTML = `<h1>API Keys</h1>
+  <div class="card"><h2>创建 Key</h2><div class="row">
+    <input id="k-label" placeholder="标签（如：光磊的 Mac）" style="width:180px" />
+    <input id="k-quota" type="number" value="10" style="width:90px" title="配额（美元）" />
+    <input id="k-models" value="*" style="width:220px" title="模型授权，逗号分隔；* = 全部" />
+    <button onclick="createKey()">创建</button>
+    <span class="muted">配额单位：美元；模型授权逗号分隔，* = 全部</span>
+  </div></div>
+  <div class="card"><h2>Keys（${keys.length}）</h2>
+  <table><thead><tr><th>标签</th><th>Key</th><th>用户</th><th>模型授权</th><th>已用/配额</th><th>状态</th><th>操作</th></tr></thead>
+  <tbody>${keys.map(k => `<tr>
+    <td>${esc(k.label)}</td>
+    <td><code>${esc(k.key.slice(0, 12))}…${esc(k.key.slice(-4))}</code> <button class="ghost" onclick="navigator.clipboard.writeText('${k.key}')">复制</button></td>
+    <td class="muted">${esc(k.user_email)}</td>
+    <td>${esc(k.model_grants)}</td>
+    <td>${fmt$(k.used_usd)} / ${fmt$(k.quota_usd)}</td>
+    <td>${k.revoked ? '<span class="pill pill-off">已吊销</span>' : '<span class="pill pill-on">有效</span>'}</td>
+    <td>${k.revoked ? '' : `
+      <button class="ghost" onclick="editKey('${k.id}', '${esc(k.label)}', ${k.quota_usd}, '${esc(k.model_grants)}')">编辑</button>
+      <button class="danger" onclick="revokeKey('${k.id}')">吊销</button>`}
+    </td></tr>`).join('')}</tbody></table></div>`
 }
-
-async function createKey() {
-  const label = document.getElementById('k-label').value.trim()
-  const quotaUsd = Number(document.getElementById('k-quota').value) || 10
-  const modelGrants = document.getElementById('k-models').value.split(',').map(s => s.trim()).filter(Boolean)
-  const r = await j('/admin/api/keys', { method: 'POST', body: JSON.stringify({ label, quotaUsd, modelGrants }) })
-  if (r.key) {
-    alert(`Key 已创建（只显示这一次，请复制保存）：\n\n${r.key}`)
-    load()
-  } else alert(JSON.stringify(r))
-}
-async function revoke(id) {
-  if (!confirm('吊销该 Key？')) return
-  await j(`/admin/api/keys/${id}/revoke`, { method: 'POST' })
-  load()
-}
-async function saveToken() {
-  const v = document.getElementById('token-input').value.trim()
-  if (!v) return
-  await j('/admin/api/config', { method: 'PUT', body: JSON.stringify({ upstreamToken: v }) })
-  document.getElementById('token-input').value = ''
-  load()
-}
-async function addModel() {
+window.createKey = async () => {
   const body = {
-    displayId: document.getElementById('m-id').value.trim(),
-    upstreamModel: document.getElementById('m-upstream').value.trim(),
-    baseUrl: document.getElementById('m-base').value.trim(),
-    apiKey: document.getElementById('m-key').value.trim(),
-    contextWindow: Number(document.getElementById('m-ctx').value) || 128000
+    label: $('#k-label').value.trim(),
+    quotaUsd: Number($('#k-quota').value) || 10,
+    modelGrants: $('#k-models').value.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  const r = await j('/admin/api/keys', { method: 'POST', body: JSON.stringify(body) })
+  if (r.key) { alert(`Key 已创建（只显示这一次，请复制保存）：\n\n${r.key}`); pageKeys() } else alert(JSON.stringify(r))
+}
+window.editKey = async (id, label, quota, grants) => {
+  const nq = prompt('新配额（美元）', quota); if (nq === null) return
+  const ng = prompt('模型授权（逗号分隔，* = 全部）', grants.replace(/[\[\]"]/g, '')); if (ng === null) return
+  await j(`/admin/api/keys/${id}/update`, { method: 'POST', body: JSON.stringify({
+    label: prompt('标签', label) ?? label,
+    quotaUsd: Number(nq) || quota,
+    modelGrants: ng.split(',').map(s => s.trim()).filter(Boolean)
+  }) })
+  pageKeys()
+}
+window.revokeKey = async (id) => { if (!confirm('吊销该 Key？')) return; await j(`/admin/api/keys/${id}/revoke`, { method: 'POST' }); pageKeys() }
+
+/* ============ 页面：模型管理 ============ */
+async function pageModels() {
+  const { models } = await j('/admin/api/models')
+  main.innerHTML = `<h1>模型管理</h1>
+  <div class="card"><h2>添加 Provider 模型（OpenAI 兼容端点）</h2>
+    <div class="row" style="margin-bottom:8px">
+      <input id="m-id" placeholder="展示 id（如 kimi-k2）" style="width:140px" />
+      <input id="m-upstream" placeholder="厂商模型名" style="width:190px" />
+      <input id="m-base" placeholder="端点 base_url" style="width:260px" />
+      <input id="m-key" type="password" placeholder="厂商 API Key" style="width:170px" />
+      <input id="m-ctx" type="number" value="128000" style="width:90px" title="上下文窗口" />
+      <button onclick="addModel()">添加</button>
+    </div>
+    <div class="muted">常用端点：Kimi <code>https://api.moonshot.cn/v1</code> · 豆包 <code>https://ark.cn-beijing.volces.com/api/v3</code> · DeepSeek <code>https://api.deepseek.com/v1</code> · GLM <code>https://open.bigmodel.cn/api/paas/v4</code></div>
+  </div>
+  <div class="card"><h2>模型目录（${models.length}）</h2>
+  <table><thead><tr><th>展示 id</th><th>厂商模型</th><th>端点</th><th>Key</th><th>上下文</th><th>状态</th><th>操作</th></tr></thead>
+  <tbody>${models.map(m => `<tr>
+    <td><code>${esc(m.display_id)}</code></td><td>${esc(m.upstream_model)}</td>
+    <td class="muted">${esc(m.base_url)}</td><td class="muted">${esc(m.api_key)}</td>
+    <td>${fmtT(m.context_window)}</td>
+    <td>${m.enabled ? '<span class="pill pill-on">启用</span>' : '<span class="pill pill-off">停用</span>'}</td>
+    <td>
+      <button class="ghost" onclick="toggleModel('${m.id}', ${m.enabled ? 'false' : 'true'})">${m.enabled ? '停用' : '启用'}</button>
+      <button class="danger" onclick="delModel('${m.id}')">删除</button>
+    </td></tr>`).join('')}</tbody></table></div>`
+}
+window.addModel = async () => {
+  const body = {
+    displayId: $('#m-id').value.trim(), upstreamModel: $('#m-upstream').value.trim(),
+    baseUrl: $('#m-base').value.trim(), apiKey: $('#m-key').value.trim(),
+    contextWindow: Number($('#m-ctx').value) || 128000
   }
   const r = await j('/admin/api/models', { method: 'POST', body: JSON.stringify(body) })
   if (r.error) alert(r.error)
-  load()
+  pageModels()
 }
-async function delModel(id) {
-  if (!confirm('删除该模型？')) return
-  await j(`/admin/api/models/${id}/delete`, { method: 'POST' })
-  load()
+window.delModel = async (id) => { if (!confirm('删除该模型？')) return; await j(`/admin/api/models/${id}/delete`, { method: 'POST' }); pageModels() }
+window.toggleModel = async (id, enabled) => { await j(`/admin/api/models/${id}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) }); pageModels() }
+
+/* ============ 页面：用量流水 ============ */
+async function pageUsage() {
+  const { events } = await j('/admin/api/usage')
+  main.innerHTML = `<h1>用量流水（最近 100 条）</h1>
+  <div class="card"><table><thead><tr><th>时间</th><th>Key</th><th>模型</th><th>输入 tokens</th><th>输出 tokens</th><th>成本</th></tr></thead>
+  <tbody>${events.map(e => `<tr>
+    <td class="muted">${new Date(e.created_at).toLocaleString()}</td><td>${esc(e.key_label)}</td>
+    <td><code>${esc(e.model)}</code></td><td>${fmtT(e.input_tokens)}</td><td>${fmtT(e.output_tokens)}</td><td>${fmt$(e.cost_usd)}</td>
+  </tr>`).join('') || '<tr><td colspan="6" class="muted">暂无用量</td></tr>'}</tbody></table></div>`
 }
-async function toggleModel(id, enabled) {
-  await j(`/admin/api/models/${id}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) })
-  load()
+
+/* ============ 页面：设置 ============ */
+async function pageSettings() {
+  const cfg = await j('/admin/api/config')
+  main.innerHTML = `<h1>设置</h1>
+  <div class="card"><h2>上游凭证（网关转发到 xAI 使用的 token）</h2>
+    <div class="row">
+      <input id="token-input" type="password" placeholder="粘贴 xAI API Key / session token" style="width:420px" />
+      <button onclick="saveToken()">保存</button>
+      <span class="${cfg.upstreamTokenSet ? 'ok' : 'err'}">${cfg.upstreamTokenSet ? '已设置（' + esc(cfg.upstreamTokenPreview) + '）' : '未设置（wbk_ 模式将 401）'}</span>
+    </div>
+    <div class="muted" style="margin-top:6px">wbk_ 模式下网关用此凭证访问上游模型；可从 console.x.ai 创建 API Key，或取 ~/.grok/auth.json 的 key 字段</div>
+  </div>
+  <div class="card"><h2>管理访问</h2>
+    <p class="muted">当前管理令牌：<code>${esc(ADMIN_TOKEN.slice(0, 4))}…</code>（环境变量 ADMIN_TOKEN 可改，默认 dev-admin-token）</p>
+    <p class="muted" style="margin-top:4px">生产环境请经 HTTPS 反向代理暴露本控制台，并更换强令牌。</p>
+  </div>`
 }
-load()
+window.saveToken = async () => {
+  const v = $('#token-input').value.trim(); if (!v) return
+  await j('/admin/api/config', { method: 'PUT', body: JSON.stringify({ upstreamToken: v }) })
+  $('#token-input').value = ''; pageSettings()
+}
+
+/* ============ 路由 ============ */
+const pages = { dashboard: pageDashboard, users: pageUsers, keys: pageKeys, models: pageModels, usage: pageUsage, settings: pageSettings }
+function route() {
+  const p = (location.hash.replace('#/', '') || 'dashboard')
+  const page = pages[p] ?? pageDashboard
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.p === p))
+  page()
+}
+window.addEventListener('hashchange', route)
+fetch('/health').then(r => r.json()).then(h => { $('#gw').textContent = `网关 v${h.version} 运行中` }).catch(() => { $('#gw').textContent = '网关离线' })
+route()
 </script>
 </body>
 </html>

@@ -218,3 +218,132 @@ export function deleteProviderModel(id: string): void {
 export function setProviderModelEnabled(id: string, enabled: boolean): void {
   db.prepare('UPDATE provider_models SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id)
 }
+
+// ---- 用户 / 工作区 / Key 编辑 / 仪表盘统计 ----
+
+export function listUsers(): unknown[] {
+  return db
+    .prepare(
+      `SELECT u.id, u.email, u.display_name, u.role, u.created_at, u.workspace_id,
+              w.name AS workspace_name,
+              (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.revoked = 0) AS key_count
+       FROM users u JOIN workspaces w ON w.id = u.workspace_id
+       ORDER BY u.created_at ASC`
+    )
+    .all()
+}
+
+export function createUser(m: {
+  email: string
+  displayName: string
+  role: string
+  workspaceId: string
+}): void {
+  db.prepare(
+    'INSERT INTO users (id, workspace_id, email, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(randomUUID(), m.workspaceId, m.email, m.displayName, m.role, Date.now())
+}
+
+export function updateUserRole(id: string, role: string): void {
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id)
+}
+
+/** 删除用户并吊销其全部 Key */
+export function deleteUser(id: string): void {
+  db.prepare('UPDATE api_keys SET revoked = 1 WHERE user_id = ?').run(id)
+  db.prepare('DELETE FROM users WHERE id = ?').run(id)
+}
+
+export function listWorkspaces(): unknown[] {
+  return db
+    .prepare(
+      `SELECT w.id, w.name, w.created_at,
+              (SELECT COUNT(*) FROM users u WHERE u.workspace_id = w.id) AS member_count
+       FROM workspaces w ORDER BY w.created_at ASC`
+    )
+    .all()
+}
+
+export function createWorkspace(name: string): void {
+  const org = db.prepare('SELECT id FROM orgs LIMIT 1').get() as { id: string }
+  db.prepare('INSERT INTO workspaces (id, org_id, name, created_at) VALUES (?, ?, ?, ?)').run(
+    randomUUID(),
+    org.id,
+    name,
+    Date.now()
+  )
+}
+
+export function updateKey(
+  id: string,
+  patch: { label?: string; quotaUsd?: number; modelGrants?: string[] }
+): void {
+  if (patch.label !== undefined) db.prepare('UPDATE api_keys SET label = ? WHERE id = ?').run(patch.label, id)
+  if (patch.quotaUsd !== undefined)
+    db.prepare('UPDATE api_keys SET quota_usd = ? WHERE id = ?').run(patch.quotaUsd, id)
+  if (patch.modelGrants !== undefined)
+    db.prepare('UPDATE api_keys SET model_grants = ? WHERE id = ?').run(
+      JSON.stringify(patch.modelGrants),
+      id
+    )
+}
+
+export interface DashboardStats {
+  users: number
+  activeKeys: number
+  providerModels: number
+  callsTotal: number
+  inputTokensTotal: number
+  outputTokensTotal: number
+  costTotalUsd: number
+  today: { calls: number; inputTokens: number; outputTokens: number; costUsd: number }
+  byModel: { model: string; calls: number; tokens: number; costUsd: number }[]
+  byDay: { day: string; calls: number; tokens: number; costUsd: number }[]
+}
+
+export function dashboardStats(): DashboardStats {
+  const users = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c
+  const activeKeys = (
+    db.prepare('SELECT COUNT(*) AS c FROM api_keys WHERE revoked = 0').get() as { c: number }
+  ).c
+  const providerModels = (
+    db.prepare('SELECT COUNT(*) AS c FROM provider_models WHERE enabled = 1').get() as { c: number }
+  ).c
+  const totals = db
+    .prepare(
+      'SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS i, COALESCE(SUM(output_tokens),0) AS o, COALESCE(SUM(cost_usd),0) AS c FROM usage_events'
+    )
+    .get() as { calls: number; i: number; o: number; c: number }
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const today = db
+    .prepare(
+      'SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS i, COALESCE(SUM(output_tokens),0) AS o, COALESCE(SUM(cost_usd),0) AS c FROM usage_events WHERE created_at >= ?'
+    )
+    .get(dayStart.getTime()) as { calls: number; i: number; o: number; c: number }
+  const byModel = db
+    .prepare(
+      `SELECT model, COUNT(*) AS calls, SUM(input_tokens + output_tokens) AS tokens, SUM(cost_usd) AS costUsd
+       FROM usage_events GROUP BY model ORDER BY costUsd DESC LIMIT 10`
+    )
+    .all() as DashboardStats['byModel']
+  const byDay = db
+    .prepare(
+      `SELECT date(created_at / 1000, 'unixepoch', 'localtime') AS day,
+              COUNT(*) AS calls, SUM(input_tokens + output_tokens) AS tokens, SUM(cost_usd) AS costUsd
+       FROM usage_events GROUP BY day ORDER BY day DESC LIMIT 14`
+    )
+    .all() as DashboardStats['byDay']
+  return {
+    users,
+    activeKeys,
+    providerModels,
+    callsTotal: totals.calls,
+    inputTokensTotal: totals.i,
+    outputTokensTotal: totals.o,
+    costTotalUsd: totals.c,
+    today: { calls: today.calls, inputTokens: today.i, outputTokens: today.o, costUsd: today.c },
+    byModel,
+    byDay
+  }
+}

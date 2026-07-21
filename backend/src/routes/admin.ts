@@ -1,12 +1,20 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import {
+  createUser,
+  createWorkspace,
+  dashboardStats,
   db,
   deleteProviderModel,
+  deleteUser,
   getConfig,
   listProviderModels,
+  listUsers,
+  listWorkspaces,
   setConfig,
   setProviderModelEnabled,
+  updateKey,
+  updateUserRole,
   upsertProviderModel
 } from '../db.js'
 
@@ -160,5 +168,93 @@ export function registerAdminRoutes(app: import('fastify').FastifyInstance): voi
     const { enabled } = (req.body ?? {}) as { enabled?: boolean }
     setProviderModelEnabled(id, enabled !== false)
     reply.send({ ok: true })
+  })
+
+  // ---- 用户管理 ----
+
+  app.get('/admin/api/users', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    reply.send({ users: listUsers() })
+  })
+
+  app.post('/admin/api/users', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const body = (req.body ?? {}) as {
+      email?: string
+      displayName?: string
+      role?: string
+      workspaceId?: string
+    }
+    if (!body.email) {
+      reply.status(400).send({ error: 'email 必填' })
+      return
+    }
+    const ws = body.workspaceId
+      ? { id: body.workspaceId }
+      : (db.prepare('SELECT id FROM workspaces LIMIT 1').get() as { id: string })
+    createUser({
+      email: body.email.trim(),
+      displayName: body.displayName?.trim() ?? '',
+      role: body.role === 'admin' ? 'admin' : 'member',
+      workspaceId: ws.id
+    })
+    reply.send({ ok: true })
+  })
+
+  app.post('/admin/api/users/:id/role', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { id } = req.params as { id: string }
+    const { role } = (req.body ?? {}) as { role?: string }
+    if (role !== 'admin' && role !== 'member') {
+      reply.status(400).send({ error: 'role 仅支持 admin / member' })
+      return
+    }
+    updateUserRole(id, role)
+    reply.send({ ok: true })
+  })
+
+  app.post('/admin/api/users/:id/delete', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    deleteUser((req.params as { id: string }).id)
+    reply.send({ ok: true })
+  })
+
+  // ---- 工作区 ----
+
+  app.get('/admin/api/workspaces', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    reply.send({ workspaces: listWorkspaces() })
+  })
+
+  app.post('/admin/api/workspaces', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { name } = (req.body ?? {}) as { name?: string }
+    if (!name?.trim()) {
+      reply.status(400).send({ error: 'name 必填' })
+      return
+    }
+    createWorkspace(name.trim())
+    reply.send({ ok: true })
+  })
+
+  // ---- Key 编辑 ----
+
+  app.post('/admin/api/keys/:id/update', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { id } = req.params as { id: string }
+    const body = (req.body ?? {}) as {
+      label?: string
+      quotaUsd?: number
+      modelGrants?: string[]
+    }
+    updateKey(id, body)
+    reply.send({ ok: true })
+  })
+
+  // ---- 仪表盘统计 ----
+
+  app.get('/admin/api/stats', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    reply.send(dashboardStats())
   })
 }
