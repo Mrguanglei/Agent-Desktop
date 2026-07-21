@@ -1,9 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
-import { estimateCostUsd, modelAllowed, resolvePrincipal } from './auth.js'
+import { estimateCostUsd, modelAllowed, resolvePrincipal, type Principal } from './auth.js'
 import { config } from './config.js'
-import { recordUsage, seedIfEmpty, getConfig } from './db.js'
+import {
+  findProviderModel,
+  listProviderModels,
+  recordUsage,
+  seedIfEmpty,
+  getConfig
+} from './db.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { billingRoute, settingsRoute, userRoute } from './routes/meta.js'
 import { modelsRoute } from './routes/models.js'
@@ -89,8 +96,12 @@ app.post('/v1/responses', async (req, reply) => {
 
 app.post('/v1/chat/completions', async (req, reply) => {
   if (!guardInference(req, reply)) return
-  const p = req.principal
   const model = (req.body as { model?: string } | undefined)?.model ?? 'unknown'
+  // Provider 模型命中 → 路由到对应厂商（豆包/Kimi/GLM/DeepSeek…）
+  const entry = findProviderModel(model)
+  if (entry) return routeProviderChat(req, reply, entry, req.principal)
+  // 否则透传 xAI 上游
+  const p = req.principal
   const upstreamToken = p ? getConfig('upstream_token') : null
   let captured = ''
   await proxyToUpstream(req, reply, '/chat/completions', {
@@ -112,6 +123,64 @@ app.post('/v1/chat/completions', async (req, reply) => {
     }
   }
 })
+
+/** 将 chat/completions 请求路由到 Provider 条目（改写 model、换 key、SSE 直通 + 计量） */
+async function routeProviderChat(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  entry: import('./db.js').ProviderModelRow,
+  principal: Principal | undefined
+): Promise<void> {
+  req.log.info({ provider: entry.base_url, model: entry.upstream_model }, 'route provider')
+  const body = { ...(req.body as Record<string, unknown>), model: entry.upstream_model }
+  let upstream: Response
+  try {
+    upstream = await fetch(`${entry.base_url}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${entry.api_key}`
+      },
+      body: JSON.stringify(body)
+    })
+  } catch (err) {
+    reply.status(502).send({
+      error: {
+        message: `provider unreachable: ${entry.base_url} (${err instanceof Error ? err.message : String(err)})`,
+        type: 'upstream'
+      }
+    })
+    return
+  }
+  reply.status(upstream.status)
+  const ct = upstream.headers.get('content-type')
+  if (ct) reply.header('content-type', ct)
+  if (!upstream.body) {
+    reply.send()
+    return
+  }
+  const source = Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream)
+  let captured = ''
+  const decoder = new TextDecoder()
+  source.on('data', (chunk: Buffer) => {
+    if (captured.length < 1_000_000) captured += decoder.decode(chunk, { stream: true })
+  })
+  reply.send(source)
+  if (principal) {
+    source.on('end', () => {
+      const usage = extractUsage(captured)
+      if (usage) {
+        recordUsage(
+          principal.keyId,
+          entry.display_id,
+          usage.inputTokens,
+          usage.outputTokens,
+          estimateCostUsd(entry.display_id, usage.inputTokens, usage.outputTokens)
+        )
+      }
+    })
+  }
+}
 
 app.get('/v1/user', userRoute)
 app.get('/v1/billing', billingRoute)

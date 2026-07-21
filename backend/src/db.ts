@@ -29,6 +29,19 @@ export interface UsageEventRow {
   created_at: number
 }
 
+/** Provider 模型条目：第三方 OpenAI 兼容模型（豆包/Kimi/GLM/DeepSeek…），网关按此路由 */
+export interface ProviderModelRow {
+  id: string
+  display_id: string // 客户端可见的模型 id
+  upstream_model: string // 厂商侧真实模型名
+  base_url: string // 厂商 OpenAI 兼容端点（如 https://api.moonshot.cn/v1）
+  api_key: string // 厂商 key（V1 明文 SQLite，V2 加密）
+  description: string
+  context_window: number
+  enabled: number
+  created_at: number
+}
+
 const DB_PATH = join(process.cwd(), 'workbuddy.db')
 export const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
@@ -78,6 +91,17 @@ CREATE INDEX IF NOT EXISTS idx_usage_key ON usage_events(key_id, created_at);
 CREATE TABLE IF NOT EXISTS gateway_config (
   k TEXT PRIMARY KEY,
   v TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS provider_models (
+  id TEXT PRIMARY KEY,
+  display_id TEXT UNIQUE NOT NULL,
+  upstream_model TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  context_window INTEGER NOT NULL DEFAULT 128000,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
 );
 `)
 
@@ -141,4 +165,56 @@ export function recordUsage(
     'INSERT INTO usage_events (id, key_id, model, input_tokens, output_tokens, cost_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(randomUUID(), keyId, model, inputTokens, outputTokens, costUsd, Date.now())
   db.prepare('UPDATE api_keys SET used_usd = used_usd + ? WHERE id = ?').run(costUsd, keyId)
+}
+
+export function listProviderModels(onlyEnabled = false): ProviderModelRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM provider_models ${onlyEnabled ? 'WHERE enabled = 1' : ''} ORDER BY created_at DESC`
+    )
+    .all() as ProviderModelRow[]
+}
+
+export function findProviderModel(displayId: string): ProviderModelRow | undefined {
+  return db
+    .prepare('SELECT * FROM provider_models WHERE display_id = ? AND enabled = 1')
+    .get(displayId) as ProviderModelRow | undefined
+}
+
+export function upsertProviderModel(m: {
+  displayId: string
+  upstreamModel: string
+  baseUrl: string
+  apiKey: string
+  description?: string
+  contextWindow?: number
+}): void {
+  db.prepare(
+    `INSERT INTO provider_models (id, display_id, upstream_model, base_url, api_key, description, context_window, enabled, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+     ON CONFLICT(display_id) DO UPDATE SET
+       upstream_model = excluded.upstream_model,
+       base_url = excluded.base_url,
+       api_key = excluded.api_key,
+       description = excluded.description,
+       context_window = excluded.context_window,
+       enabled = 1`
+  ).run(
+    randomUUID(),
+    m.displayId,
+    m.upstreamModel,
+    m.baseUrl.replace(/\/$/, ''),
+    m.apiKey,
+    m.description ?? '',
+    m.contextWindow ?? 128000,
+    Date.now()
+  )
+}
+
+export function deleteProviderModel(id: string): void {
+  db.prepare('DELETE FROM provider_models WHERE id = ?').run(id)
+}
+
+export function setProviderModelEnabled(id: string, enabled: boolean): void {
+  db.prepare('UPDATE provider_models SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id)
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { useChatStore } from '../stores/chat-store'
+import { MarkdownView } from './MarkdownView'
 
 /** Plan 审批弹窗（_x.ai/exit_plan_mode）：批准并执行 / 要求修改（带反馈）/ 放弃计划 */
 export function PlanApprovalDialog(): JSX.Element | null {
@@ -26,9 +27,11 @@ export function PlanApprovalDialog(): JSX.Element | null {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-surface-border bg-surface-1 p-3">
-          <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-neutral-700">
-            {req.planContent ?? '（未提供计划内容）'}
-          </pre>
+          {req.planContent ? (
+            <MarkdownView text={req.planContent} />
+          ) : (
+            <p className="text-sm text-neutral-400">（未提供计划内容）</p>
+          )}
         </div>
 
         {showFeedback ? (

@@ -1,6 +1,7 @@
 import { readFileSync, watchFile } from 'node:fs'
 import { join } from 'node:path'
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { listProviderModels } from '../db.js'
 import { fetchUpstreamJson } from '../upstream.js'
 
 interface LocalModelEntry {
@@ -38,7 +39,21 @@ export async function modelsRoute(req: FastifyRequest, reply: FastifyReply): Pro
   const upstream = await fetchUpstreamJson(req, '/models')
   const upstreamData = (upstream?.json as UpstreamModels | null)?.data ?? []
   const localIds = new Set(localModels.map((m) => m.id))
-  let merged = [...localModels, ...upstreamData.filter((m) => m.id && !localIds.has(m.id))]
+  // Provider 模型（DB 注册表）以 OpenAI 形状下发，声明 chat_completions 后端
+  const providerEntries = listProviderModels(true).map((m) => ({
+    id: m.display_id,
+    object: 'model' as const,
+    name: m.display_id,
+    description: m.description || `${m.upstream_model} @ ${m.base_url}`,
+    apiBackend: 'chat_completions',
+    _meta: { totalContextTokens: m.context_window }
+  }))
+  const providerIds = new Set(providerEntries.map((m) => m.id))
+  let merged = [
+    ...providerEntries,
+    ...localModels.filter((m) => !providerIds.has(m.id)),
+    ...upstreamData.filter((m) => m.id && !localIds.has(m.id) && !providerIds.has(m.id))
+  ]
   const grants = req.principal?.modelGrants
   if (grants && !grants.includes('*')) {
     merged = merged.filter((m) => m.id && grants.includes(m.id))

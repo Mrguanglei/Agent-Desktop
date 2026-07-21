@@ -39,6 +39,25 @@
   </div>
 
   <div class="card">
+    <h2>Provider 模型（豆包 / Kimi / GLM / DeepSeek…，OpenAI 兼容端点）</h2>
+    <div class="row" style="margin-bottom:10px">
+      <input id="m-id" placeholder="展示 id（如 kimi-k2）" style="width:150px" />
+      <input id="m-upstream" placeholder="厂商模型名（如 kimi-k2-0905-preview）" style="width:210px" />
+      <input id="m-base" placeholder="端点（如 https://api.moonshot.cn/v1）" style="width:280px" />
+      <input id="m-key" type="password" placeholder="厂商 API Key" style="width:180px" />
+      <input id="m-ctx" type="number" value="128000" style="width:90px" title="上下文窗口" />
+      <button onclick="addModel()">添加模型</button>
+    </div>
+    <div class="muted" style="margin-bottom:8px">
+      常用端点：Kimi <code>https://api.moonshot.cn/v1</code> · 豆包 <code>https://ark.cn-beijing.volces.com/api/v3</code> · DeepSeek <code>https://api.deepseek.com/v1</code> · GLM <code>open.bigmodel.cn/api/paas/v4</code>
+    </div>
+    <table>
+      <thead><tr><th>展示 id</th><th>厂商模型</th><th>端点</th><th>Key</th><th>上下文</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="models"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <h2>API Keys</h2>
     <div class="row" style="margin-bottom:10px">
       <input id="k-label" placeholder="标签（如：光磊的 Mac）" />
@@ -100,6 +119,21 @@ async function load() {
       <td>${e.output_tokens}</td>
       <td>$${e.cost_usd.toFixed(6)}</td>
     </tr>`).join('')
+
+  const { models } = await j('/admin/api/models')
+  document.getElementById('models').innerHTML = models.map(m => `
+    <tr>
+      <td><code>${esc(m.display_id)}</code></td>
+      <td>${esc(m.upstream_model)}</td>
+      <td class="muted">${esc(m.base_url)}</td>
+      <td class="muted">${esc(m.api_key)}</td>
+      <td>${m.context_window}</td>
+      <td>${m.enabled ? '<span class="ok">启用</span>' : '<span class="muted">停用</span>'}</td>
+      <td>
+        <button class="ghost" onclick="toggleModel('${m.id}', ${m.enabled ? 'false' : 'true'})">${m.enabled ? '停用' : '启用'}</button>
+        <button class="danger" onclick="delModel('${m.id}')">删除</button>
+      </td>
+    </tr>`).join('')
 }
 
 async function createKey() {
@@ -122,6 +156,27 @@ async function saveToken() {
   if (!v) return
   await j('/admin/api/config', { method: 'PUT', body: JSON.stringify({ upstreamToken: v }) })
   document.getElementById('token-input').value = ''
+  load()
+}
+async function addModel() {
+  const body = {
+    displayId: document.getElementById('m-id').value.trim(),
+    upstreamModel: document.getElementById('m-upstream').value.trim(),
+    baseUrl: document.getElementById('m-base').value.trim(),
+    apiKey: document.getElementById('m-key').value.trim(),
+    contextWindow: Number(document.getElementById('m-ctx').value) || 128000
+  }
+  const r = await j('/admin/api/models', { method: 'POST', body: JSON.stringify(body) })
+  if (r.error) alert(r.error)
+  load()
+}
+async function delModel(id) {
+  if (!confirm('删除该模型？')) return
+  await j(`/admin/api/models/${id}/delete`, { method: 'POST' })
+  load()
+}
+async function toggleModel(id, enabled) {
+  await j(`/admin/api/models/${id}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) })
   load()
 }
 load()

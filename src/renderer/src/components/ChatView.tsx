@@ -4,6 +4,7 @@ import { useAppStore } from '../stores/app-store'
 import { useChatStore, type ThreadChat } from '../stores/chat-store'
 import { Composer } from './Composer'
 import { DiffView } from './DiffView'
+import { MarkdownView } from './MarkdownView'
 
 export function ChatView({ threadId }: { threadId: string }): JSX.Element {
   const thread = useAppStore((s) => s.threads.find((t) => t.id === threadId))
@@ -240,12 +241,7 @@ function MessageItem({ item }: { item: ChatItem }): JSX.Element | null {
     case 'assistant':
       return (
         <div className="mb-3 max-w-[90%]">
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-800">
-            {item.text}
-            {item.streaming && (
-              <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-neutral-800 align-middle" />
-            )}
-          </div>
+          <MarkdownView text={item.text} streaming={item.streaming} />
         </div>
       )
     case 'thought':

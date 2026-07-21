@@ -8,3 +8,5 @@ backend/dist/
 .research/codex-app-server-ts/
 .research/codex-app-server-schema/
 backend/workbuddy.db*
+vendor/grok-bin/
+release/

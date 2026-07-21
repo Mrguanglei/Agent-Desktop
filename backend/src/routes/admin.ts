@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { db, getConfig, setConfig } from '../db.js'
+import {
+  db,
+  deleteProviderModel,
+  getConfig,
+  listProviderModels,
+  setConfig,
+  setProviderModelEnabled,
+  upsertProviderModel
+} from '../db.js'
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? 'dev-admin-token'
 
@@ -99,6 +107,58 @@ export function registerAdminRoutes(app: import('fastify').FastifyInstance): voi
     if (typeof body.upstreamToken === 'string') {
       setConfig('upstream_token', body.upstreamToken.trim())
     }
+    reply.send({ ok: true })
+  })
+
+  // ---- Provider 模型管理（豆包/Kimi/GLM/DeepSeek 等 OpenAI 兼容模型） ----
+
+  app.get('/admin/api/models', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const models = listProviderModels().map((m) => ({
+      ...m,
+      api_key: `${m.api_key.slice(0, 6)}…${m.api_key.slice(-4)}`
+    }))
+    reply.send({ models })
+  })
+
+  app.post('/admin/api/models', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const body = (req.body ?? {}) as {
+      displayId?: string
+      upstreamModel?: string
+      baseUrl?: string
+      apiKey?: string
+      description?: string
+      contextWindow?: number
+    }
+    if (!body.displayId || !body.upstreamModel || !body.baseUrl || !body.apiKey) {
+      reply.status(400).send({
+        error: 'displayId / upstreamModel / baseUrl / apiKey 均为必填'
+      })
+      return
+    }
+    upsertProviderModel({
+      displayId: body.displayId.trim(),
+      upstreamModel: body.upstreamModel.trim(),
+      baseUrl: body.baseUrl.trim(),
+      apiKey: body.apiKey.trim(),
+      description: body.description?.trim() ?? '',
+      contextWindow: body.contextWindow
+    })
+    reply.send({ ok: true })
+  })
+
+  app.post('/admin/api/models/:id/delete', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    deleteProviderModel((req.params as { id: string }).id)
+    reply.send({ ok: true })
+  })
+
+  app.post('/admin/api/models/:id/toggle', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const { id } = req.params as { id: string }
+    const { enabled } = (req.body ?? {}) as { enabled?: boolean }
+    setProviderModelEnabled(id, enabled !== false)
     reply.send({ ok: true })
   })
 }

@@ -1,0 +1,25 @@
+appId: com.workbuddy.grokdesktop
+productName: Grok Desktop
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+asar: true
+
+# 捆绑 grok 后端二进制（Codex 桌面端同款分发模型）：
+# 打包前 vendor/grok-bin/grok → Contents/Resources/grok-bin/grok
+# spawn 优先级（backend.ts detectGrok）：GROK_BIN env > 捆绑路径 > PATH > 常见路径
+extraResources:
+  - from: vendor/grok-bin
+    to: grok-bin
+
+mac:
+  category: public.app-category.developer-tools
+  target: dmg
+  icon: null
+  identity: null # 开发期不签名（Gatekeeper 会提示"已损坏/未知开发者"，右键打开即可）
+  hardenedRuntime: false
+
+dmg:
+  writeUpdateInfo: false
