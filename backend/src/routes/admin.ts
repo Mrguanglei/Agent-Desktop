@@ -120,6 +120,76 @@ export function registerAdminRoutes(app: import('fastify').FastifyInstance): voi
 
   // ---- Provider 模型管理（豆包/Kimi/GLM/DeepSeek 等 OpenAI 兼容模型） ----
 
+  /** 厂商预设：选中即自动填端点 */
+  const PROVIDER_PRESETS = [
+    { id: 'moonshot', name: 'Kimi（月之暗面）', baseUrl: 'https://api.moonshot.cn/v1' },
+    { id: 'ark', name: '豆包（火山方舟）', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+    { id: 'zhipu', name: 'GLM（智谱）', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+    { id: 'custom', name: '自定义（OpenAI 兼容）', baseUrl: '' }
+  ]
+
+  app.get('/admin/api/providers/presets', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    reply.send({ presets: PROVIDER_PRESETS })
+  })
+
+  /** 测试连接 + 拉取厂商模型列表（One-API 式「获取模型」） */
+  app.post('/admin/api/providers/test', async (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const body = (req.body ?? {}) as { baseUrl?: string; apiKey?: string }
+    if (!body.baseUrl || !body.apiKey) {
+      reply.status(400).send({ error: 'baseUrl / apiKey 必填' })
+      return
+    }
+    try {
+      const r = await fetch(`${body.baseUrl.replace(/\/$/, '')}/models`, {
+        headers: { authorization: `Bearer ${body.apiKey}` },
+        signal: AbortSignal.timeout(8000)
+      })
+      if (!r.ok) {
+        reply.send({ ok: false, error: `厂商返回 HTTP ${r.status}（连接正常，Key 可能无效）`, models: [] })
+        return
+      }
+      const data = (await r.json()) as { data?: { id?: string }[] }
+      const models = (data.data ?? [])
+        .filter((m) => m.id)
+        .map((m) => ({ id: m.id as string }))
+        .slice(0, 100)
+      reply.send({ ok: true, models })
+    } catch (err) {
+      reply.send({
+        ok: false,
+        error: `连接失败：${err instanceof Error ? err.message : String(err)}`,
+        models: []
+      })
+    }
+  })
+
+  /** 批量接入（向导勾选后一次入库） */
+  app.post('/admin/api/models/bulk', (req, reply) => {
+    if (!requireAdmin(req, reply)) return
+    const body = (req.body ?? {}) as {
+      baseUrl?: string
+      apiKey?: string
+      models?: { displayId: string; upstreamModel: string; contextWindow?: number }[]
+    }
+    if (!body.baseUrl || !body.apiKey || !Array.isArray(body.models) || body.models.length === 0) {
+      reply.status(400).send({ error: 'baseUrl / apiKey / models 必填' })
+      return
+    }
+    for (const m of body.models) {
+      upsertProviderModel({
+        displayId: m.displayId.trim(),
+        upstreamModel: m.upstreamModel.trim(),
+        baseUrl: body.baseUrl.trim(),
+        apiKey: body.apiKey.trim(),
+        contextWindow: m.contextWindow
+      })
+    }
+    reply.send({ ok: true, count: body.models.length })
+  })
+
   app.get('/admin/api/models', (req, reply) => {
     if (!requireAdmin(req, reply)) return
     const models = listProviderModels().map((m) => ({

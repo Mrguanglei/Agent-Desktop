@@ -192,21 +192,25 @@ window.editKey = async (id, label, quota, grants) => {
 window.revokeKey = async (id) => { if (!confirm('吊销该 Key？')) return; await j(`/admin/api/keys/${id}/revoke`, { method: 'POST' }); pageKeys() }
 
 /* ============ 页面：模型管理 ============ */
+let fetchedModels = []
+let currentPreset = null
+
 async function pageModels() {
-  const { models } = await j('/admin/api/models')
+  const [{ models }, { presets }] = await Promise.all([j('/admin/api/models'), j('/admin/api/providers/presets')])
   main.innerHTML = `<h1>模型管理</h1>
-  <div class="card"><h2>添加 Provider 模型（OpenAI 兼容端点）</h2>
-    <div class="row" style="margin-bottom:8px">
-      <input id="m-id" placeholder="展示 id（如 kimi-k2）" style="width:140px" />
-      <input id="m-upstream" placeholder="厂商模型名" style="width:190px" />
-      <input id="m-base" placeholder="端点 base_url" style="width:260px" />
-      <input id="m-key" type="password" placeholder="厂商 API Key" style="width:170px" />
-      <input id="m-ctx" type="number" value="128000" style="width:90px" title="上下文窗口" />
-      <button onclick="addModel()">添加</button>
+  <div class="card"><h2>接入厂商模型（向导）</h2>
+    <div class="row" style="margin-bottom:10px" id="preset-row">
+      ${presets.map(p => `<button class="ghost" data-base="${esc(p.baseUrl)}" data-name="${esc(p.name)}" onclick="pickPreset(this)">${esc(p.name)}</button>`).join('')}
     </div>
-    <div class="muted">常用端点：Kimi <code>https://api.moonshot.cn/v1</code> · 豆包 <code>https://ark.cn-beijing.volces.com/api/v3</code> · DeepSeek <code>https://api.deepseek.com/v1</code> · GLM <code>https://open.bigmodel.cn/api/paas/v4</code></div>
+    <div class="row" style="margin-bottom:10px">
+      <input id="m-base" placeholder="端点 base_url（选厂商自动填）" style="width:320px" />
+      <input id="m-key" type="password" placeholder="厂商 API Key" style="width:220px" />
+      <button onclick="testProvider()">测试连接并获取模型</button>
+      <span id="test-result"></span>
+    </div>
+    <div id="model-picker"></div>
   </div>
-  <div class="card"><h2>模型目录（${models.length}）</h2>
+  <div class="card"><h2>已接入模型（${models.length}）</h2>
   <table><thead><tr><th>展示 id</th><th>厂商模型</th><th>端点</th><th>Key</th><th>上下文</th><th>状态</th><th>操作</th></tr></thead>
   <tbody>${models.map(m => `<tr>
     <td><code>${esc(m.display_id)}</code></td><td>${esc(m.upstream_model)}</td>
@@ -216,18 +220,64 @@ async function pageModels() {
     <td>
       <button class="ghost" onclick="toggleModel('${m.id}', ${m.enabled ? 'false' : 'true'})">${m.enabled ? '停用' : '启用'}</button>
       <button class="danger" onclick="delModel('${m.id}')">删除</button>
-    </td></tr>`).join('')}</tbody></table></div>`
+    </td></tr>`).join('') || '<tr><td colspan="7" class="muted">还没有接入模型，用上方向导添加</td></tr>'}</tbody></table></div>`
+  fetchedModels = []
 }
-window.addModel = async () => {
-  const body = {
-    displayId: $('#m-id').value.trim(), upstreamModel: $('#m-upstream').value.trim(),
-    baseUrl: $('#m-base').value.trim(), apiKey: $('#m-key').value.trim(),
-    contextWindow: Number($('#m-ctx').value) || 128000
+
+window.pickPreset = (btn) => {
+  document.querySelectorAll('#preset-row button').forEach(b => b.classList.remove('on-preset'))
+  btn.classList.add('on-preset')
+  btn.style.background = '#2b4a80'; btn.style.color = '#fff'
+  document.querySelectorAll('#preset-row button').forEach(b => { if (b !== btn) { b.style.background = ''; b.style.color = '' } })
+  $('#m-base').value = btn.dataset.base
+  currentPreset = btn.dataset.name
+  $('#m-key').focus()
+}
+
+window.testProvider = async () => {
+  const baseUrl = $('#m-base').value.trim(), apiKey = $('#m-key').value.trim()
+  if (!baseUrl || !apiKey) return alert('端点和 Key 必填')
+  $('#test-result').textContent = '连接中…'; $('#test-result').className = 'muted'
+  const r = await j('/admin/api/providers/test', { method: 'POST', body: JSON.stringify({ baseUrl, apiKey }) })
+  if (!r.ok) {
+    $('#test-result').textContent = '✗ ' + r.error; $('#test-result').className = 'err'
+    $('#model-picker').innerHTML = ''
+    return
   }
-  const r = await j('/admin/api/models', { method: 'POST', body: JSON.stringify(body) })
-  if (r.error) alert(r.error)
+  $('#test-result').textContent = `✓ 连接成功，发现 ${r.models.length} 个模型`
+  $('#test-result').className = 'ok'
+  fetchedModels = r.models
+  $('#model-picker').innerHTML = `
+    <div style="margin-top:8px">
+      <div class="row" style="margin-bottom:6px">
+        <b style="font-size:12px">选择要接入的模型：</b>
+        <button class="ghost" onclick="pickAll(true)">全选</button>
+        <button class="ghost" onclick="pickAll(false)">全不选</button>
+      </div>
+      <div style="max-height:220px;overflow-y:auto;border:1px solid #e6e8ec;border-radius:8px;padding:8px">
+        ${r.models.map((m, i) => `<label style="display:flex;gap:6px;padding:3px 0;font-size:12px">
+          <input type="checkbox" class="pm-cb" data-id="${esc(m.id)}" ${i < 5 ? 'checked' : ''} />
+          <code>${esc(m.id)}</code>
+        </label>`).join('')}
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button onclick="addPicked()">接入选中模型</button>
+        <span class="muted">接入后桌面端模型选择器立即可选；调用经本网关路由计量</span>
+      </div>
+    </div>`
+}
+
+window.pickAll = (on) => document.querySelectorAll('.pm-cb').forEach(cb => cb.checked = on)
+
+window.addPicked = async () => {
+  const picked = [...document.querySelectorAll('.pm-cb:checked')].map(cb => ({ displayId: cb.dataset.id, upstreamModel: cb.dataset.id }))
+  if (picked.length === 0) return alert('至少选一个模型')
+  const body = { baseUrl: $('#m-base').value.trim(), apiKey: $('#m-key').value.trim(), models: picked }
+  const r = await j('/admin/api/models/bulk', { method: 'POST', body: JSON.stringify(body) })
+  if (r.ok) { $('#model-picker').innerHTML = ''; $('#test-result').textContent = '' }
   pageModels()
 }
+
 window.delModel = async (id) => { if (!confirm('删除该模型？')) return; await j(`/admin/api/models/${id}/delete`, { method: 'POST' }); pageModels() }
 window.toggleModel = async (id, enabled) => { await j(`/admin/api/models/${id}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) }); pageModels() }
 
